@@ -68,9 +68,11 @@ struct PrefixToolsTests {
                 .replacingOccurrences(of: "$np_support", with: support.path(percentEncoded: false))
                 .replacingOccurrences(of: "$np_build", with: shippedRuntimeID)
             let unix = try assigned("wine_unix").replacingOccurrences(of: "$np_root", with: root)
+            let pe64 = try assigned("wine_pe64").replacingOccurrences(of: "$np_root", with: root)
             return text
                 .replacingOccurrences(of: "${WINEDLLPATH:+:$WINEDLLPATH}", with: "")
                 .replacingOccurrences(of: "$wine_unix", with: unix)
+                .replacingOccurrences(of: "$wine_pe64", with: pe64)
                 .replacingOccurrences(of: "$np_root", with: root)
         }
 

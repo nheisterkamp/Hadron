@@ -1,5 +1,6 @@
 #!/bin/sh
-# Build one of Hadron's x86_64 (Rosetta) Wine runtimes.
+# Build one of Hadron's Wine runtimes: x86_64 ones that run under Rosetta, or an arm64
+# one (ARCH=arm64 in its definition) that runs natively and emulates x86 with FEX.
 #
 #   ./build-wine.sh <id>    build the runtime runtime/runtimes/<id>.env describes
 #   ./build-wine.sh --all   build every runtime there
@@ -13,8 +14,18 @@
 # in the loader, name the profile steamuser, and let a DLL overlay stand in for
 # builtins. A patch in runtime/patches/<id> replaces the one of the same name.
 #
-# Third party libraries are x86_64 builds under DEPS, never the arm64 Homebrew ones.
-# PKG_CONFIG_LIBDIR is pinned to DEPS so configure cannot pick up the wrong arch.
+# Third party libraries are built for the runtime's arch under DEPS, never taken from
+# Homebrew. PKG_CONFIG_LIBDIR is pinned to DEPS so configure cannot pick up the wrong arch.
+#
+# An arm64 runtime needs macOS 26.5. Its loader maps over a large PAGEZERO and starts
+# itself with 4K pages (patch 0005), which only a process signed with the
+# com.apple.developer.cross-architecture-support entitlement may do, and an entitlement
+# like that only holds for the main executable of an app bundle with a provisioning
+# profile, and the kernel kills it at launch when it is signed by a certificate the
+# profile does not list. So the loader becomes lib/wine/aarch64-unix/Wine.app, signed with
+# HADRON_SIGN_IDENTITY (default: an identity whose certificate the profile lists) and the profile
+# HADRON_PROVISIONING_PROFILE (default: the newest installed one for WINE_BUNDLE_ID
+# that grants the entitlement).
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -42,6 +53,7 @@ STAGING_COMMIT=""
 # lsteamclient and steam.exe are built in the runtime's own tree unless this names
 # another runtime to take them from, for a Wine too old to build them.
 COMPONENTS_FROM=""
+ARCH=x86_64
 # shellcheck disable=SC1090
 . "$definition"
 [ "$RUNTIME_ID" = "$1" ] || die "$definition names itself $RUNTIME_ID"
@@ -53,7 +65,19 @@ WORK="${WORK:-$repo/scratch/runtimes/$RUNTIME_ID}"
 WINE_SRC="$WORK/wine"
 WINE_BUILD="$WORK/build"
 STAGING_ROOT="${STAGING_ROOT:-$repo/scratch/staging}"
-DEPS="${DEPS:-$repo/scratch/deps-x86_64}"
+case "$ARCH" in
+    x86_64)
+        HOST=x86_64-apple-darwin HOST_CPU=x86_64 WINE_ARCHS=i386,x86_64
+        UNIX_DIR=x86_64-unix PE64_DIR=x86_64-windows
+        CC_ARCH="clang -arch x86_64" CXX_ARCH="clang++ -arch x86_64" ;;
+    arm64)
+        # llvm-mingw on PATH has its own clang, so the Mac compiler is named in full.
+        HOST=aarch64-apple-darwin HOST_CPU=aarch64 WINE_ARCHS=arm64ec,aarch64,i386
+        UNIX_DIR=aarch64-unix PE64_DIR=aarch64-windows
+        CC_ARCH="/usr/bin/clang -arch arm64" CXX_ARCH="/usr/bin/clang++ -arch arm64" ;;
+    *) die "$definition has ARCH=$ARCH, expected x86_64 or arm64" ;;
+esac
+DEPS="${DEPS:-$repo/scratch/deps-$ARCH}"
 FREETYPE_URL="${FREETYPE_URL:-https://gitlab.freedesktop.org/freetype/freetype.git}"
 FREETYPE_TAG="${FREETYPE_TAG:-VER-2-13-3}"
 FREETYPE_SRC="${FREETYPE_SRC:-$repo/scratch/freetype}"
@@ -61,6 +85,16 @@ ADDONS="${ADDONS:-$repo/scratch/downloads/addons}"
 DOWNLOADS="${DOWNLOADS:-$repo/scratch/downloads}"
 OUT="${OUT:-$repo/out/runtime/$RUNTIME_ID}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
+
+# arm64 only: llvm-mingw builds the ARM64EC, ARM64 and i386 PE side, and FEX, at a
+# pinned release, runs x86 code. FEX goes in as Wine's default emulators, xtajit64.dll
+# for x86_64 and xtajit.dll for i386, so a prefix finds them from its first boot.
+LLVM_MINGW_VERSION=20261006
+LLVM_MINGW_SHA=a7a19b11048e89372637d26279cdb7c430ed3cf8c1e224310421312bf986ebf6
+FEX_TAG=FEX-2610
+FEX_COMMIT=14c92681f4d62cf84d901460e0358de09c8847a7
+FEX_URL="${FEX_URL:-https://github.com/FEX-Emu/FEX.git}"
+WINE_BUNDLE_ID="${WINE_BUNDLE_ID:-nl.nhsd.hadron.wine}"
 
 # Vulkan for winevulkan, DXVK and wined3d's Vulkan renderer. Wine loads the Khronos
 # loader, which takes its driver from VK_DRIVER_FILES: MoltenVK, or KosmicKrisp (Mesa's
@@ -100,11 +134,24 @@ ADDON_PINS="
 wine-mono-10.4.1-x86.tar.xz a16606ef0724202e6a6848ece6e0cbba64d11e2f11aefe744af1d93c6d9f99bb
 wine-mono-11.2.0-x86.tar.xz c9fb2e2823acf30b000b8806177db0f40751786136dd3f8fb2be7897b1643d06
 wine-mono-11.3.0-x86.tar.xz 54a1b0111c3fe4b785eae688af94d27e64995707ad648b6fee8000381b80d298
+wine-mono-11.3.0-arm64.tar.xz 227cbeef943c71d9bbcbd9d00ea026decbc4ecfb758346f13d2a34a7fd8ecfcf
 wine-gecko-2.47.4-x86.tar.xz 2cfc8d5c948602e21eff8a78613e1826f2d033df9672cace87fed56e8310afb6
 wine-gecko-2.47.4-x86_64.tar.xz fd88fc7e537d058d7a8abf0c1ebc90c574892a466de86706a26d254710a82814
 "
 
 PATH="/opt/homebrew/bin:/opt/homebrew/opt/bison/bin:/opt/homebrew/opt/flex/bin:/opt/homebrew/opt/autoconf/bin:$PATH"
+if [ "$ARCH" = arm64 ]; then
+    llvm_mingw="$DOWNLOADS/llvm-mingw-$LLVM_MINGW_VERSION-ucrt-macos-universal"
+    if [ ! -x "$llvm_mingw/bin/arm64ec-w64-mingw32-clang" ]; then
+        tarball="$llvm_mingw.tar.xz"
+        mkdir -p "$DOWNLOADS"
+        [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/${tarball##*/}"
+        [ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$LLVM_MINGW_SHA" ] || die "$tarball does not match its pin"
+        tar -xJf "$tarball" -C "$DOWNLOADS"
+    fi
+    PATH="$llvm_mingw/bin:$PATH"
+fi
 export PATH
 
 # Wine dlopens its optional libraries by the name configure recorded. A bare name
@@ -192,18 +239,19 @@ prepare_source() {
 prepare_source
 
 if [ ! -f "$DEPS/lib/libfreetype.6.dylib" ]; then
-    echo "==> building x86_64 freetype $FREETYPE_TAG into $DEPS"
+    echo "==> building $ARCH freetype $FREETYPE_TAG into $DEPS"
     [ -d "$FREETYPE_SRC/.git" ] || git clone --depth 1 --branch "$FREETYPE_TAG" "$FREETYPE_URL" "$FREETYPE_SRC"
-    cmake -S "$FREETYPE_SRC" -B "$FREETYPE_SRC-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DBUILD_SHARED_LIBS=ON \
+    cmake -S "$FREETYPE_SRC" -B "$FREETYPE_SRC-build-$ARCH" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER=/usr/bin/clang \
+        -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DBUILD_SHARED_LIBS=ON \
         -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON \
         -DFT_REQUIRE_ZLIB=ON -DCMAKE_INSTALL_PREFIX="$DEPS"
-    ninja -C "$FREETYPE_SRC-build" install
+    ninja -C "$FREETYPE_SRC-build-$ARCH" install
     install_name_tool -id "$UNIX_TO_LIB/libfreetype.6.dylib" "$(readlink -f "$DEPS/lib/libfreetype.6.dylib")"
 fi
 
 if [ ! -f "$DEPS/lib/libMoltenVK.dylib" ]; then
-    echo "==> adding x86_64 MoltenVK $MOLTENVK_VERSION to $DEPS"
+    echo "==> adding $ARCH MoltenVK $MOLTENVK_VERSION to $DEPS"
     tarball="$DOWNLOADS/MoltenVK-$MOLTENVK_VERSION-macos.tar"
     mkdir -p "$DOWNLOADS" "$DEPS/lib"
     [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
@@ -212,7 +260,7 @@ if [ ! -f "$DEPS/lib/libMoltenVK.dylib" ]; then
     unpacked="$DOWNLOADS/MoltenVK-$MOLTENVK_VERSION"
     rm -rf "$unpacked" && mkdir -p "$unpacked"
     tar -xf "$tarball" -C "$unpacked"
-    lipo -thin x86_64 "$unpacked/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" \
+    lipo -thin "$ARCH" "$unpacked/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" \
         -output "$DEPS/lib/libMoltenVK.dylib"
     install_name_tool -id "$UNIX_TO_LIB/libMoltenVK.dylib" "$DEPS/lib/libMoltenVK.dylib"
 fi
@@ -229,12 +277,12 @@ build_tls_lib() {
     [ -f "$tarball" ] || curl -fsSL -o "$tarball" "$(echo "$line" | awk '{ print $2 }')/$file"
     [ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$(echo "$line" | awk '{ print $3 }')" ] \
         || die "$tarball does not match its pin"
-    src="$repo/scratch/tls/${file%.tar.*}"
-    rm -rf "$src" && mkdir -p "$repo/scratch/tls"
-    tar -xf "$tarball" -C "$repo/scratch/tls"
-    echo "==> building x86_64 ${file%.tar.*} into $DEPS"
-    ( cd "$src" && ./configure --quiet --host=x86_64-apple-darwin --prefix="$DEPS" \
-        --enable-shared --disable-static CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
+    src="$repo/scratch/tls/$ARCH/${file%.tar.*}"
+    rm -rf "$src" && mkdir -p "$repo/scratch/tls/$ARCH"
+    tar -xf "$tarball" -C "$repo/scratch/tls/$ARCH"
+    echo "==> building $ARCH ${file%.tar.*} into $DEPS"
+    ( cd "$src" && ./configure --quiet --host="$HOST" --prefix="$DEPS" \
+        --enable-shared --disable-static CC="$CC_ARCH" CXX="$CXX_ARCH" \
         CPPFLAGS="-I$DEPS/include" LDFLAGS="-L$DEPS/lib -Wl,-headerpad_max_install_names" \
         PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig" "$@" && make -j"$JOBS" && make install )
 }
@@ -257,16 +305,20 @@ fi
 if [ ! -f "$WINE_BUILD/Makefile" ]; then
     echo "==> configuring $WINE_BUILD"
     mkdir -p "$WINE_BUILD"
+    # steam.exe comes from the bridge, and llvm-mingw cannot build its i386 half.
+    disable=""
+    [ "$ARCH" = x86_64 ] || disable="--disable-steam.exe"
+    # shellcheck disable=SC2086
     ( cd "$WINE_BUILD" && PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig" "$WINE_SRC/configure" \
-        --prefix=/ --enable-archs=i386,x86_64 --without-x \
-        --host=x86_64-apple-darwin CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
+        --prefix=/ --enable-archs="$WINE_ARCHS" --without-x $disable \
+        --host="$HOST" CC="$CC_ARCH" CXX="$CXX_ARCH" \
         FREETYPE_CFLAGS="-I$DEPS/include/freetype2" FREETYPE_LIBS="-L$DEPS/lib -lfreetype" \
         ac_cv_lib_soname_freetype="$UNIX_TO_LIB/libfreetype.6.dylib" \
         ac_cv_lib_soname_vulkan="$UNIX_TO_LIB/libvulkan.1.dylib" \
         ac_cv_lib_soname_gnutls="$UNIX_TO_LIB/libgnutls.30.dylib" )
 fi
-grep -q '^host_cpu = x86_64' "$WINE_BUILD/config.status" \
-    || die "configure did not take the x86_64 host"
+grep -q "^host_cpu = $HOST_CPU" "$WINE_BUILD/config.status" \
+    || die "configure did not take the $HOST_CPU host"
 grep -q 'SONAME_LIBVULKAN "@loader_path/../../libvulkan.1.dylib"' "$WINE_BUILD/include/config.h" \
     || die "configure did not take the Vulkan loader, remove $WINE_BUILD to configure again"
 grep -q 'SONAME_LIBGNUTLS "@loader_path' "$WINE_BUILD/include/config.h" \
@@ -284,9 +336,15 @@ echo "==> building with $JOBS jobs"
 make -C "$WINE_BUILD" -j"$JOBS" $skip
 
 # The component scripts build lsteamclient and the steam.exe shim against this tree.
-if [ -z "$COMPONENTS_FROM" ]; then
+# On arm64 the tree's make builds the PE halves, ARM64X (for ARM64EC games) and i386,
+# and the script only the unix half.
+if [ -z "$COMPONENTS_FROM" ] && [ "$ARCH" = x86_64 ]; then
     WINE_BUILD="$WINE_BUILD" "$repo/lsteamclient/build.sh"
     WINE_BUILD="$WINE_BUILD" "$repo/steam-shim/build.sh"
+elif [ -z "$COMPONENTS_FROM" ]; then
+    make -C "$WINE_BUILD" -j"$JOBS" dlls/lsteamclient/aarch64-windows/lsteamclient.dll \
+        dlls/lsteamclient/i386-windows/lsteamclient.dll
+    UNIX_ARCH=arm64 WINE_BUILD="$WINE_BUILD" WINE_SRC_REL=../wine "$repo/lsteamclient/build.sh" --unix
 fi
 
 echo "==> staging into $OUT"
@@ -300,36 +358,50 @@ for lib in $TLS_LIBS; do cp "$DEPS/lib/$lib" "$OUT/lib/"; done
 if [ -n "$COMPONENTS_FROM" ]; then
     # Its unixlib interface is stable across Wine 11, so these load in the older Wine.
     donor="$repo/out/runtime/$COMPONENTS_FROM/lib/wine"
-    [ -f "$donor/x86_64-unix/lsteamclient.so" ] || die "build $COMPONENTS_FROM first, $RUNTIME_ID takes lsteamclient from it"
-    for arch in i386-windows x86_64-windows x86_64-unix; do
+    [ -f "$donor/$UNIX_DIR/lsteamclient.so" ] || die "build $COMPONENTS_FROM first, $RUNTIME_ID takes lsteamclient from it"
+    for arch in i386-windows "$PE64_DIR" "$UNIX_DIR"; do
         cp "$donor/$arch"/lsteamclient.* "$OUT/lib/wine/$arch/"
     done
 else
-    for arch in i386-windows x86_64-windows; do
+    for arch in i386-windows "$PE64_DIR"; do
         cp "$WINE_BUILD/dlls/lsteamclient/$arch/lsteamclient.dll" "$OUT/lib/wine/$arch/"
     done
-    cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/x86_64-unix/"
+    cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/$UNIX_DIR/"
 fi
 
 # compat_run.sh runs the loader from the unix dir, beside ntdll.so.
-[ -e "$OUT/lib/wine/x86_64-unix/wine" ] || cp "$OUT/bin/wine" "$OUT/lib/wine/x86_64-unix/wine"
+[ -e "$OUT/lib/wine/$UNIX_DIR/wine" ] || cp "$OUT/bin/wine" "$OUT/lib/wine/$UNIX_DIR/wine"
 
-# Wine builds with -g, which is most of the size. The x86_64 unix halves stay unsigned.
+# Wine builds with -g, which is most of the size. The x86_64 unix halves stay unsigned,
+# because a signed x86_64 builtin no longer loads. arm64 is the other way round: an
+# arm64 image needs the signature its linker gave it, which strip would break and a
+# codesign ad hoc signature does not replace (the loader is killed when it maps one),
+# so on arm64 only the PE side is stripped.
 echo "==> stripping debug info"
-find "$OUT/lib/wine/i386-windows" -type f -exec i686-w64-mingw32-strip --strip-debug {} +
-find "$OUT/lib/wine/x86_64-windows" -type f -exec x86_64-w64-mingw32-strip --strip-debug {} +
-find "$OUT/lib/wine/x86_64-unix" -type f -name '*.so' -exec strip -S {} +
-strip -S "$OUT/bin/wine" "$OUT/bin/wineserver" "$OUT/lib/wine/x86_64-unix/wine"
+if [ "$ARCH" = x86_64 ]; then
+    find "$OUT/lib/wine/i386-windows" -type f -exec i686-w64-mingw32-strip --strip-debug {} +
+    find "$OUT/lib/wine/x86_64-windows" -type f -exec x86_64-w64-mingw32-strip --strip-debug {} +
+    find "$OUT/lib/wine/x86_64-unix" -type f -name '*.so' -exec strip -S {} +
+    strip -S "$OUT/bin/wine" "$OUT/bin/wineserver" "$OUT/lib/wine/x86_64-unix/wine"
+else
+    find "$OUT/lib/wine/i386-windows" "$OUT/lib/wine/aarch64-windows" -type f -exec llvm-strip --strip-debug {} +
+fi
 
 addons_c="$WINE_SRC/dlls/appwiz.cpl/addons.c"
 mono_version=$(sed -n 's/^#define MONO_VERSION "\(.*\)"$/\1/p' "$addons_c")
 gecko_version=$(sed -n 's/^#define GECKO_VERSION "\(.*\)"$/\1/p' "$addons_c")
 [ -n "$mono_version" ] && [ -n "$gecko_version" ] || die "no add-on versions in $addons_c"
-echo "==> adding wine-mono $mono_version and wine-gecko $gecko_version"
 mkdir -p "$ADDONS"
-for addon in "mono/wine-mono/$mono_version/wine-mono-$mono_version-x86.tar.xz" \
-             "gecko/wine-gecko/$gecko_version/wine-gecko-$gecko_version-x86.tar.xz" \
-             "gecko/wine-gecko/$gecko_version/wine-gecko-$gecko_version-x86_64.tar.xz"; do
+# An arm64 Wine asks for the arm64 build of wine-mono, and there is no wine-gecko for it.
+if [ "$ARCH" = x86_64 ]; then
+    addons="mono/wine-mono/$mono_version/wine-mono-$mono_version-x86.tar.xz
+gecko/wine-gecko/$gecko_version/wine-gecko-$gecko_version-x86.tar.xz
+gecko/wine-gecko/$gecko_version/wine-gecko-$gecko_version-x86_64.tar.xz"
+else
+    addons="mono/wine-mono/$mono_version/wine-mono-$mono_version-arm64.tar.xz"
+fi
+echo "==> adding $(echo "$addons" | sed 's|.*/||' | tr '\n' ' ')"
+for addon in $addons; do
     subdir="${addon%%/*}"
     path="${addon#*/}"
     name="${path##*/}"
@@ -342,6 +414,8 @@ for addon in "mono/wine-mono/$mono_version/wine-mono-$mono_version-x86.tar.xz" \
     tar -xJf "$tarball" -C "$OUT/share/wine/$subdir"
 done
 
+# DXMT and D3DMetal have x86_64 unix halves, so they are for the Rosetta runtimes only.
+if [ "$ARCH" = x86_64 ]; then
 echo "==> adding DXMT $DXMT_VERSION under lib/graphics/dxmt"
 tarball="$DOWNLOADS/dxmt-v$DXMT_VERSION-builtin.tar.gz"
 [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
@@ -355,6 +429,7 @@ tar -xzf "$tarball" -C "$OUT/lib/graphics/dxmt" --strip-components 1
 for arch in i386-windows x86_64-windows x86_64-unix; do
     cp "$OUT"/lib/graphics/dxmt/$arch/winemetal.* "$OUT/lib/wine/$arch/"
 done
+fi
 
 tarball="$DOWNLOADS/${TEMPLATE_URL##*/}"
 [ -f "$tarball" ] || curl -fsSL -o "$tarball" "$TEMPLATE_URL"
@@ -378,25 +453,36 @@ if [ ! -d "$vulkan" ]; then
         "$frameworks/libvulkan.1.4.363.dylib" "$frameworks/libvulkan_kosmickrisp.dylib"
     mv "$vulkan.new" "$vulkan"
 fi
-cp "$vulkan/libvulkan.1.4.363.dylib" "$OUT/lib/libvulkan.1.dylib"
-cp "$vulkan/libvulkan_kosmickrisp.dylib" "$OUT/lib/"
+# The loader is universal; KosmicKrisp is x86_64 only, so arm64 has MoltenVK alone.
+lipo -thin "$ARCH" "$vulkan/libvulkan.1.4.363.dylib" -output "$OUT/lib/libvulkan.1.dylib"
+drivers="MoltenVK:libMoltenVK.dylib:1.4.0"
+if [ "$ARCH" = x86_64 ]; then
+    cp "$vulkan/libvulkan_kosmickrisp.dylib" "$OUT/lib/"
+    drivers="$drivers kosmickrisp:libvulkan_kosmickrisp.dylib:1.4.363"
+fi
 mkdir -p "$OUT/share/vulkan/icd.d"
-for driver in MoltenVK:libMoltenVK.dylib:1.4.0 kosmickrisp:libvulkan_kosmickrisp.dylib:1.4.363; do
+for driver in $drivers; do
     printf '{\n    "file_format_version": "1.0.1",\n    "ICD": {\n        "library_path": "../../../lib/%s",\n        "api_version": "%s"\n    }\n}\n' \
         "$(echo "$driver" | cut -d: -f2)" "$(echo "$driver" | cut -d: -f3)" \
         > "$OUT/share/vulkan/icd.d/$(echo "$driver" | cut -d: -f1)_icd.json"
 done
 
-for pair in $TEMPLATE_BACKENDS; do
+# These are x86 PE only, which FEX runs on arm64. An ARM64EC process looks for 64-bit
+# builtins in aarch64-windows, so that is where the x86_64 ones go there.
+backends="$TEMPLATE_BACKENDS"
+[ "$ARCH" = x86_64 ] || backends="dxvk:dxvk1 cnc_ddraw:ddraw"
+for pair in $backends; do
     from="${pair%%:*}"
     name="${pair#*:}"
     echo "==> adding $(head -1 "$renderers/$from/version") under lib/graphics/$name"
     for arch in i386-windows x86_64-windows; do
         [ -d "$renderers/$from/wine/$arch" ] || continue
-        mkdir -p "$OUT/lib/graphics/$name/$arch"
+        to=$arch
+        [ "$arch" = i386-windows ] || to=$PE64_DIR
+        mkdir -p "$OUT/lib/graphics/$name/$to"
         for dll in "$renderers/$from/wine/$arch"/*.dll; do
-            cp "$dll" "$OUT/lib/graphics/$name/$arch/"
-            "$WINE_BUILD/tools/winebuild/winebuild" --builtin "$OUT/lib/graphics/$name/$arch/${dll##*/}"
+            cp "$dll" "$OUT/lib/graphics/$name/$to/"
+            "$WINE_BUILD/tools/winebuild/winebuild" --builtin "$OUT/lib/graphics/$name/$to/${dll##*/}"
         done
     done
     cp "$renderers/$from/LICENSE" "$renderers/$from/version" "$OUT/lib/graphics/$name/"
@@ -405,6 +491,7 @@ done
 # D3DMetal, Apple's D3D11/12 on Metal from the Game Porting Toolkit, through the glue in
 # patch 0004. Its DLLs are marked builtin already. The unix modules find libd3dshared
 # beside them, and libd3dshared finds D3DMetal.framework beside itself.
+if [ "$ARCH" = x86_64 ]; then
 echo "==> adding D3DMetal under lib/graphics/d3dmetal"
 d3dmetal="$renderers/d3dmetal"
 mkdir -p "$OUT/lib/graphics/d3dmetal/x86_64-windows" "$OUT/lib/graphics/d3dmetal/x86_64-unix"
@@ -412,6 +499,88 @@ cp "$d3dmetal"/wine/x86_64-windows/*.dll "$OUT/lib/graphics/d3dmetal/x86_64-wind
 cp "$d3dmetal"/wine/x86_64-unix/*.so "$d3dmetal/external/libd3dshared.dylib" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
 cp -R "$d3dmetal/external/D3DMetal.framework" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
 cp "$d3dmetal"/*.rtf "$OUT/lib/graphics/d3dmetal/"
+fi
+
+if [ "$ARCH" = arm64 ]; then
+    fex="$repo/scratch/fex/$FEX_TAG"
+    if [ ! -f "$fex/build_wow64/Bin/libwow64fex.dll" ] || [ ! -f "$fex/build_arm64ec/Bin/libarm64ecfex.dll" ]; then
+        if [ ! -d "$fex/.git" ]; then
+            git clone --quiet --depth 1 --branch "$FEX_TAG" --recurse-submodules --shallow-submodules "$FEX_URL" "$fex"
+        fi
+        [ "$(git -C "$fex" rev-parse HEAD)" = "$FEX_COMMIT" ] || die "$FEX_TAG is not at the pinned $FEX_COMMIT"
+        for target in arm64ec:arm64ec wow64:aarch64; do
+            echo "==> building FEX $FEX_TAG for ${target%%:*}"
+            cmake -S "$fex" -B "$fex/build_${target%%:*}" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_TOOLCHAIN_FILE="$fex/Data/CMake/toolchain_mingw.cmake" \
+                -DMINGW_TRIPLE="${target#*:}-w64-mingw32" -DENABLE_LTO=False -DENABLE_ASSERTIONS=False \
+                -DENABLE_JEMALLOC_GLIBC_ALLOC=False -DBUILD_TESTING=False -DTUNE_ARCH=generic \
+                -DTUNE_CPU=none -DRANGES_NATIVE=OFF
+            cmake --build "$fex/build_${target%%:*}"
+        done
+    fi
+    # install_name_tool keeps a linker signature valid but breaks a codesign one, such as
+    # MoltenVK's, and an arm64 library without a valid signature takes the process down.
+    for lib in "$OUT"/lib/*.dylib; do
+        codesign -v "$lib" 2>/dev/null || codesign -f -s - "$lib"
+    done
+
+    echo "==> adding FEX $FEX_TAG as xtajit64.dll and xtajit.dll"
+    cp "$fex/build_arm64ec/Bin/libarm64ecfex.dll" "$OUT/lib/wine/aarch64-windows/xtajit64.dll"
+    cp "$fex/build_wow64/Bin/libwow64fex.dll" "$OUT/lib/wine/aarch64-windows/xtajit.dll"
+    for dll in xtajit64.dll xtajit.dll; do
+        "$WINE_BUILD/tools/winebuild/winebuild" --builtin "$OUT/lib/wine/aarch64-windows/$dll"
+    done
+    cp "$fex/LICENSE" "$OUT/lib/wine/aarch64-windows/FEX-LICENSE"
+
+    # The loader as the main executable of a bundle that carries the profile. It finds
+    # ntdll.so beside itself, and ntdll takes everything else from where ntdll.so really is.
+    profile="${HADRON_PROVISIONING_PROFILE:-}"
+    if [ -z "$profile" ]; then
+        newest=0
+        for candidate in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.provisionprofile \
+                         "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision; do
+            [ -f "$candidate" ] || continue
+            plist=$(security cms -D -i "$candidate" 2>/dev/null) || continue
+            appid=$(echo "$plist" | plutil -extract Entitlements.com\\.apple\\.application-identifier raw -o - - 2>/dev/null) || continue
+            [ "${appid#*.}" = "$WINE_BUNDLE_ID" ] || continue
+            echo "$plist" | plutil -extract Entitlements.com\\.apple\\.developer\\.cross-architecture-support raw -o - - >/dev/null 2>&1 || continue
+            expiry=$(date -j -f %Y-%m-%dT%H:%M:%SZ "$(echo "$plist" | plutil -extract ExpirationDate raw -o - -)" +%s)
+            [ "$expiry" -gt "$(date +%s)" ] && [ "$expiry" -gt "$newest" ] || continue
+            newest=$expiry profile=$candidate
+        done
+    fi
+    [ -n "$profile" ] || die "no provisioning profile for $WINE_BUNDLE_ID with the cross-architecture entitlement, set HADRON_PROVISIONING_PROFILE"
+    team=$(security cms -D -i "$profile" | plutil -extract TeamIdentifier.0 raw -o - -)
+    # The identity has to be one whose certificate the profile lists.
+    identity="${HADRON_SIGN_IDENTITY:-}"
+    if [ -z "$identity" ]; then
+        identities=$(security find-identity -v -p codesigning)
+        plist=$(security cms -D -i "$profile")
+        count=$(echo "$plist" | plutil -extract DeveloperCertificates raw -o - -)
+        i=0
+        while [ "$i" -lt "$count" ] && [ -z "$identity" ]; do
+            hash=$(echo "$plist" | plutil -extract "DeveloperCertificates.$i" raw -o - - | base64 -D \
+                | shasum -a 1 | cut -d' ' -f1 | tr a-f A-F)
+            echo "$identities" | grep -q " $hash " && identity=$hash
+            i=$((i + 1))
+        done
+    fi
+    [ -n "$identity" ] || die "no signing identity for the certificates in $profile, set HADRON_SIGN_IDENTITY"
+
+    echo "==> signing the loader as $WINE_BUNDLE_ID for team $team"
+    unix="$OUT/lib/wine/aarch64-unix"
+    app="$unix/Wine.app"
+    rm -rf "$app" && mkdir -p "$app/Contents/MacOS"
+    sed "s/@BUNDLE_ID@/$WINE_BUNDLE_ID/" "$here/arm64/Info.plist" > "$app/Contents/Info.plist"
+    cp "$profile" "$app/Contents/embedded.provisionprofile"
+    mv "$unix/wine" "$app/Contents/MacOS/wine"
+    ln -s ../../../ntdll.so "$app/Contents/MacOS/ntdll.so"
+    ln -s Wine.app/Contents/MacOS/wine "$unix/wine"
+    rm -f "$OUT/bin/wine" && ln -s ../lib/wine/aarch64-unix/Wine.app/Contents/MacOS/wine "$OUT/bin/wine"
+    entitlements="$WINE_BUILD/wine.entitlements"
+    sed -e "s/@TEAM@/$team/g" -e "s/@BUNDLE_ID@/$WINE_BUNDLE_ID/g" "$here/arm64/wine.entitlements" > "$entitlements"
+    codesign --force --sign "$identity" --entitlements "$entitlements" "$app"
+fi
 
 # The app identifies the runtime by this, see RuntimeSource.swift.
 echo "$RUNTIME_ID" > "$OUT/hadron-runtime"

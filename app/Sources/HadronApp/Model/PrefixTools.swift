@@ -122,7 +122,7 @@ enum PrefixTools {
         let wine = layout(runner: runner, flavor: flavor)
         environment["WINELOADER"] = wine.loader.path(percentEncoded: false)
         environment["WINESERVER"] = wine.server.path(percentEncoded: false)
-        environment["WINEDLLPATH"] = "\(root)/lib/wine/x86_64-windows:"
+        environment["WINEDLLPATH"] = "\(root)/lib/wine/\(flavor.peDir):"
             + wine.unixDir.path(percentEncoded: false)
         environment["WINEPREFIX"] = prefix.pfx.path(percentEncoded: false)
         environment["PATH"] = "\(root)/bin:" + (environment["PATH"] ?? "/usr/bin:/bin")

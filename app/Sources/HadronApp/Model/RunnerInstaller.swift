@@ -8,11 +8,15 @@ enum RunnerInstaller {
     static let step = String(localized: "Copy the Wine runtime")
 
     // lsteamclient's halves, which a runtime builds in.
-    static let builtins = [
-        (arch: "i386-windows", name: "lsteamclient.dll"),
-        (arch: "x86_64-windows", name: "lsteamclient.dll"),
-        (arch: "x86_64-unix", name: "lsteamclient.so"),
-    ]
+    static let builtins = builtins(for: .rosetta)
+
+    static func builtins(for flavor: CompatTool.Flavor) -> [(arch: String, name: String)] {
+        [
+            (arch: "i386-windows", name: "lsteamclient.dll"),
+            (arch: flavor.peDir, name: "lsteamclient.dll"),
+            (arch: flavor.unixDir, name: "lsteamclient.so"),
+        ]
+    }
 
     // Returns true when it copied, false when the build was already in place.
     @discardableResult
@@ -275,15 +279,15 @@ enum RunnerInstaller {
             throw StepFailure(step: step, detail: String(localized: "The copy at \(root.path(percentEncoded: false)) is not Wine runtime \(build.id)."))
         }
         guard FileManager.default.isExecutableFile(
-            atPath: RuntimeSource.unixLoader(inRoot: root).path(percentEncoded: false)
+            atPath: RuntimeSource.unixLoader(inRoot: root, flavor: build.flavor).path(percentEncoded: false)
         ) else {
-            throw StepFailure(step: step, detail: String(localized: "The copy has no Wine loader at x86_64-unix/wine."))
+            throw StepFailure(step: step, detail: String(localized: "The copy has no Wine loader at \(build.flavor.unixDir)/wine."))
         }
     }
 
     // What an installed runtime is missing, for the status pane.
     static func problems(build: RunnerBuild, root: URL) -> [String] {
-        builtins.compactMap { builtin in
+        builtins(for: build.flavor).compactMap { builtin in
             let file = root.appending(path: "lib/wine/\(builtin.arch)/\(builtin.name)")
             return FileManager.default.fileExists(atPath: file.path(percentEncoded: false))
                 ? nil : String(localized: "\(builtin.arch)/\(builtin.name) is missing")

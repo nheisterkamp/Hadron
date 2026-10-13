@@ -48,8 +48,10 @@ struct ShimAgreementTests {
         let arches = try #require(lists.first)
         let unix = "\"${wine_unix##*/}\""
         #expect(arches.contains(unix))
-        let windows = RunnerInstaller.builtins.filter { $0.arch.hasSuffix("-windows") }
-        #expect(arches.subtracting([unix]) == Set(windows.map(\.arch)))
+        // The 64-bit one is likewise whichever PE directory goes with that loader.
+        let pe64 = "\"${wine_pe64##*/}\""
+        #expect(arches.contains(pe64))
+        #expect(arches.subtracting([unix, pe64]) == ["i386-windows"])
 
         for builtin in RunnerInstaller.builtins {
             #expect(block.contains(builtin.name))
@@ -64,6 +66,10 @@ struct ShimAgreementTests {
         #expect(script.contains("wine_unix=\"$np_root/lib/wine/\(unix.arch)\""))
         #expect(RuntimeSource.unixLoader(inRoot: URL(filePath: "/R")).path(percentEncoded: false)
             == "/R/lib/wine/\(unix.arch)/wine")
+        for flavor in CompatTool.Flavor.allCases {
+            #expect(script.contains("wine_unix=\"$np_root/lib/wine/\(flavor.unixDir)\""))
+            #expect(script.contains("wine_pe64=\"$np_root/lib/wine/\(flavor.peDir)\""))
+        }
     }
 
     // A runner write left in the shim is the layout problem coming back: writing into the

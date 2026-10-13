@@ -4,7 +4,9 @@
 #   ./check-runtime.sh <runtime dir> [<steamclient dir>]
 #
 # Boots a fresh prefix, then checks the steamclient redirect (patch 0001) for 64 and
-# 32 bit, that HTTPS works (it needs the network), and that DXMT loads through HADRON_DLL_OVERLAY (patch 0003). The redirect
+# 32 bit, that HTTPS works (it needs the network), and that the graphics backends the
+# runtime ships load through HADRON_DLL_OVERLAY (patch 0003), each on the Vulkan driver
+# the run script gives it. An arm64 runtime runs the same x86 test programs with FEX. The redirect
 # needs Valve's steamclient.dll and steamclient64.dll, taken from the bridge Hadron
 # installs unless a directory with them is given, and is skipped without them.
 # Needs mingw-w64.
@@ -30,6 +32,8 @@ WINEDEBUG=-all
 WINEDLLOVERRIDES="steamclient=n;steamclient64=n;lsteamclient=b"
 export WINEPREFIX WINEDEBUG WINEDLLOVERRIDES
 wine="$runtime/lib/wine/x86_64-unix/wine"
+[ -d "$runtime/lib/wine/aarch64-unix" ] && wine="$runtime/lib/wine/aarch64-unix/wine"
+icd="$runtime/share/vulkan/icd.d"
 
 fails=0
 check() {
@@ -60,10 +64,18 @@ else
 fi
 check "HTTPS works through schannel" "$wine" tls64.exe
 check "Wine's own d3d11 creates a device" "$wine" overlay64.exe
-check "DXMT comes through the overlay" sh -c \
-    "HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxmt' '$wine' overlay64.exe | grep -q '^d3d11: dxmt'"
-check "DXVK comes through the overlay" sh -c \
-    "HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxvk' '$wine' overlay64.exe | grep -q '^d3d11: dxvk'"
+if [ -d "$runtime/lib/graphics/dxmt" ]; then
+    check "DXMT comes through the overlay" sh -c \
+        "HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxmt' '$wine' overlay64.exe | grep -q '^d3d11: dxmt'"
+fi
+if [ -d "$runtime/lib/graphics/dxvk" ]; then
+    check "DXVK 3.1 comes through the overlay on KosmicKrisp" sh -c \
+        "VK_DRIVER_FILES='$icd/kosmickrisp_icd.json' HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxvk' '$wine' overlay64.exe | grep -q '^d3d11: dxvk'"
+fi
+if [ -d "$runtime/lib/graphics/dxvk1" ]; then
+    check "DXVK 1.10 comes through the overlay on MoltenVK" sh -c \
+        "VK_DRIVER_FILES='$icd/MoltenVK_icd.json' HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxvk1' '$wine' overlay64.exe | grep -q '^d3d11: dxvk'"
+fi
 
 if [ "$fails" -eq 0 ]; then
     echo "==> all checks hold"

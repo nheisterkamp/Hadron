@@ -14,6 +14,8 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
     var tools: [CompatTool] = []
 
     var displayVersion: String { releaseVersion }
+
+    var flavor: CompatTool.Flavor { tools.first?.flavor ?? .rosetta }
 }
 
 struct CompatTool: Sendable, Hashable, Identifiable {
@@ -23,6 +25,9 @@ struct CompatTool: Sendable, Hashable, Identifiable {
 
         var name: String { self == .fex ? "FEX" : "Rosetta" }
         var unixDir: String { self == .fex ? "aarch64-unix" : "x86_64-unix" }
+        // Where the 64-bit PE builtins are: ARM64X ones for FEX, which runs x86_64 code
+        // as ARM64EC.
+        var peDir: String { self == .fex ? "aarch64-windows" : "x86_64-windows" }
     }
 
     let name: String
@@ -52,6 +57,7 @@ enum SupportedRunners {
         rosetta(id: "wine-staging-11.15", name: "Wine Staging 11.15"),
         rosetta(id: "wine-11.19", name: "Wine 11.19"),
         rosetta(id: "crossover-26.3", name: "CrossOver Wine 26.3"),
+        fex(id: "wine-11.19-arm64", name: "Wine 11.19 (Apple Silicon)"),
     ]
 
     // Steam maps Cloud save paths into a prefix only for a tool whose name contains
@@ -59,6 +65,13 @@ enum SupportedRunners {
     private static func rosetta(id: String, name: String) -> RunnerBuild {
         RunnerBuild(id: id, releaseVersion: name, tools: [
             CompatTool(name: "hadron-proton-\(id)", flavor: .rosetta, display: "Hadron \(name)"),
+        ])
+    }
+
+    // A native arm64 Wine that runs x86 code with FEX.
+    private static func fex(id: String, name: String) -> RunnerBuild {
+        RunnerBuild(id: id, releaseVersion: name, tools: [
+            CompatTool(name: "hadron-proton-\(id)", flavor: .fex, display: "Hadron \(name)"),
         ])
     }
 

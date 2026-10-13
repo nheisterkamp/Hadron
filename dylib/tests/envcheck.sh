@@ -5,7 +5,7 @@ SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 [ -f "$SRC" ] || { echo "envcheck: $SRC not present, skipped"; exit 0; }
 
 strip() { sed 's/^[[:space:]]*//'; }
-dllpath_line=$(grep 'export WINEDLLPATH=' "$SRC" | grep 'x86_64-windows' | strip)
+dllpath_line=$(grep '^export WINEDLLPATH="$wine_pe64' "$SRC" | strip)
 overrides_line=$(grep 'export WINEDLLOVERRIDES=' "$SRC" | grep 'lsteamclient=b' | strip)
 [ -n "$dllpath_line" ] || { echo "FAIL: WINEDLLPATH merge not found"; exit 1; }
 [ -n "$overrides_line" ] || { echo "FAIL: WINEDLLOVERRIDES merge not found"; exit 1; }
@@ -18,6 +18,7 @@ is() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "$2" "$3"; fi; }
 echo "== WINEDLLPATH (first match wins, runner first) =="
 np_root=/R
 wine_unix=/R/lib/wine/x86_64-unix
+wine_pe64=/R/lib/wine/x86_64-windows
 WINEDLLPATH=""
 eval "$dllpath_line"
 is "no user value" "/R/lib/wine/x86_64-windows:/R/lib/wine/x86_64-unix" "$WINEDLLPATH"
@@ -88,10 +89,22 @@ HADRON_GRAPHICS=dxvk1
 eval "$graphics"
 is "switching away from D3DMetal drops libd3dshared" "" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
 rm "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json"
+rmdir "$np_root/lib/graphics/dxmt" "$np_root/lib/graphics/d3dmetal" "$np_root/lib/graphics/d9vk" \
+  "$np_root/lib/graphics/dxvk" "$np_root/lib/dxmt"
+for wanted in dxmt d3dmetal; do
+  unset VK_DRIVER_FILES
+  HADRON_GRAPHICS=$wanted HADRON_DDRAW=""
+  eval "$graphics"
+  is "$wanted falls back to DXVK 1.10 where the runtime lacks it, as on arm64" "$np_root/lib/graphics/dxvk1" "${HADRON_DLL_OVERLAY:-}"
+  is "that fallback runs on MoltenVK" "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "${VK_DRIVER_FILES:-}"
+done
+HADRON_GRAPHICS=wined3d
+eval "$graphics"
+is "wined3d stays Wine's own Direct3D there" "" "${HADRON_DLL_OVERLAY:-}"
 unset VK_DRIVER_FILES
 HADRON_GRAPHICS=dxvk
 eval "$graphics"
-is "without KosmicKrisp DXVK runs on MoltenVK" "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "${VK_DRIVER_FILES:-}"
+is "without KosmicKrisp, as on arm64, DXVK runs on MoltenVK" "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "${VK_DRIVER_FILES:-}"
 HADRON_GRAPHICS=wined3d HADRON_DDRAW=cnc-ddraw
 eval "$graphics"
 is "wined3d leaves Wine's own Direct3D, cnc-ddraw adds itself" "$np_root/lib/graphics/ddraw" "${HADRON_DLL_OVERLAY:-}"

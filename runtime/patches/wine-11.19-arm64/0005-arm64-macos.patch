@@ -1,0 +1,165 @@
+diff --git a/configure.ac b/configure.ac
+--- a/configure.ac
++++ b/configure.ac
+@@ -991,6 +991,12 @@
+             WINELOADER_LDFLAGS="$WINELOADER_LDFLAGS -Wl,-no_pie,-image_base,0x200000000,-no_huge,-no_fixup_chains,-segalign,0x1000,-segaddr,WINE_RESERVE,0x1000"],
+            [wine_use_preloader=yes])
+         ;;
++      aarch64)
++        dnl PAGEZERO is at least 4GB on ARM64 macOS. -x86_64_layout_emulation (Xcode 26.4)
++        dnl lets the loader map over it, so it covers the low area Wine needs. Building the
++        dnl loader for macOS 11 keeps the kernel from clearing x18, the TEB pointer.
++        wine_use_preloader=no
++        WINELOADER_LDFLAGS="-Wl,-x86_64_layout_emulation,-pagezero_size,0x170000000,-sectcreate,__TEXT,__info_plist,loader/wine_info.plist,-platform_version,macos,11.0,11.0" ;;
+       *)    wine_use_preloader=no ;;
+     esac
+ 
+diff --git a/loader/main.c b/loader/main.c
+--- a/loader/main.c
++++ b/loader/main.c
+@@ -70,6 +70,56 @@
+     }
+ }
+ 
++#elif defined(__APPLE__) && defined(__aarch64__)
++
++/* ARM64 macOS has no small PAGEZERO. The loader is linked with a PAGEZERO up to
++ * 0x170000000 and -x86_64_layout_emulation, which lets it map over that range, and the
++ * range is handed to ntdll as reserved, as the zero-fill section does on x86_64.
++ */
++#include <spawn.h>
++#include <sys/mman.h>
++
++static const struct wine_preload_info preload_info[] =
++{
++    { (void *)0x1000, 0x170000000 - 0x1000 }, /*         0x1000 -    0x170000000 */
++    { 0, 0 }                                  /* end of list */
++};
++
++const __attribute((visibility("default"))) struct wine_preload_info *wine_main_preload_info = preload_info;
++
++static void init_reserved_areas(void)
++{
++    int i;
++
++    for (i = 0; wine_main_preload_info[i].size != 0; i++)
++    {
++        if (mmap( wine_main_preload_info[i].addr, wine_main_preload_info[i].size, PROT_NONE,
++                  MAP_FIXED | MAP_NORESERVE | MAP_PRIVATE | MAP_ANON, -1, 0 ) == MAP_FAILED)
++            fprintf( stderr, "wine: could not reserve %p-%p\n", wine_main_preload_info[i].addr,
++                     (char *)wine_main_preload_info[i].addr + wine_main_preload_info[i].size );
++    }
++}
++
++/* Windows has 4K pages. Starting with macOS 26.5 a process holding the
++ * cross-architecture entitlement may run with them, so the loader starts itself
++ * over with 4K pages. */
++static void exec_with_4k_pages( char *argv[] )
++{
++    extern char **environ;
++    posix_spawnattr_t attr;
++    uint32_t size = PATH_MAX;
++    char path[PATH_MAX];
++
++    if (sysconf( _SC_PAGESIZE ) == 0x1000) return;
++    if (_NSGetExecutablePath( path, &size )) return;
++    if (posix_spawnattr_init( &attr )) return;
++    if (!posix_spawnattr_setflags( &attr, POSIX_SPAWN_SETEXEC ) &&
++        !posix_spawnattr_set_4k_page_size_np( &attr ))
++        posix_spawn( NULL, path, NULL, &attr, argv, environ );
++    fprintf( stderr, "wine: could not start with 4K pages, keeping %ldK pages\n", sysconf( _SC_PAGESIZE ) / 1024 );
++    posix_spawnattr_destroy( &attr );
++}
++
+ #else
+ 
+ /* the preloader will set this variable */
+@@ -171,6 +221,9 @@
+ {
+     void *handle;
+ 
++#if defined(__APPLE__) && defined(__aarch64__)
++    exec_with_4k_pages( argv );
++#endif
+     init_reserved_areas();
+ 
+     if ((handle = try_dlopen( get_self_exe() )) ||
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -464,6 +464,24 @@
+ #endif
+     execv( argv[0], argv );
+     free( argv[0] );
++#endif
++#if defined(__APPLE__) && defined(__aarch64__)
++    {
++        /* The kernel refuses to read exec arguments from below the PAGEZERO the loader
++         * was linked with, where Windows memory lives, so copy them out first. */
++        char **env = *_NSGetEnviron(), **args, **envp;
++        int i, argc = 0, envc = 0;
++
++        while (argv[1 + argc]) argc++;
++        while (env[envc]) envc++;
++        args = malloc( (argc + 1) * sizeof(*args) );
++        envp = malloc( (envc + 1) * sizeof(*envp) );
++        for (i = 0; i < argc; i++) args[i] = strdup( argv[1 + i] );
++        args[argc] = NULL;
++        for (i = 0; i < envc; i++) envp[i] = strdup( env[i] );
++        envp[envc] = NULL;
++        execve( args[0], args, envp );
++    }
+ #endif
+     execv( argv[1], argv + 1 );
+ }
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -1370,6 +1370,12 @@
+         if (vprot & VPROT_WRITECOPY) prot |= PROT_WRITE | PROT_READ;
+         if (vprot & VPROT_EXEC) prot |= PROT_EXEC | PROT_READ;
+         if (vprot & VPROT_WRITEWATCH) prot &= ~PROT_WRITE;
++#if defined(__APPLE__) && defined(__aarch64__)
++        /* ARM64 macOS has no writable executable memory outside MAP_JIT. Such pages
++         * start out writable and swap between RW and RX on faults, see
++         * virtual_handle_fault(). */
++        if ((prot & (PROT_WRITE | PROT_EXEC)) == (PROT_WRITE | PROT_EXEC)) prot &= ~PROT_EXEC;
++#endif
+     }
+     if (!prot) prot = PROT_NONE;
+     return prot;
+@@ -4698,6 +4704,24 @@
+     mutex_lock( &virtual_mutex );  /* no need for signal masking inside signal handler */
+     vprot = get_host_page_vprot( page );
+ 
++#if defined(__APPLE__) && defined(__aarch64__)
++    /* Writable executable pages are either writable or executable at a time. */
++    if ((vprot & VPROT_COMMITTED) && !(vprot & VPROT_GUARD) && (vprot & VPROT_EXEC) &&
++        (vprot & (VPROT_WRITE | VPROT_WRITECOPY)))
++    {
++        if (err == EXCEPTION_EXECUTE_FAULT)
++        {
++            if (!mprotect( page, host_page_size, PROT_READ | PROT_EXEC )) ret = STATUS_SUCCESS;
++            goto done;
++        }
++        if (err == EXCEPTION_WRITE_FAULT && !(vprot & VPROT_WRITEWATCH))
++        {
++            if (!mprotect( page, host_page_size, PROT_READ | PROT_WRITE )) ret = STATUS_SUCCESS;
++            goto done;
++        }
++    }
++#endif
++
+ #ifdef __APPLE__
+     /* Rosetta on Apple Silicon misreports certain write faults as read faults. */
+     if (err == EXCEPTION_READ_FAULT && (get_unix_prot( vprot ) & PROT_READ))
+@@ -4741,6 +4765,9 @@
+                 ret = STATUS_SUCCESS;
+         }
+     }
++#if defined(__APPLE__) && defined(__aarch64__)
++done:
++#endif
+     mutex_unlock( &virtual_mutex );
+     rec->ExceptionCode = ret;
+     return ret;

@@ -118,7 +118,7 @@ enum RuntimeSource {
         return RuntimeInstall(root: root, support: .supported(build), isManual: isManual)
     }
 
-    static func unixLoader(inRoot root: URL) -> URL {
-        root.appending(path: "lib/wine/x86_64-unix/wine")
+    static func unixLoader(inRoot root: URL, flavor: CompatTool.Flavor = .rosetta) -> URL {
+        root.appending(path: "lib/wine/\(flavor.unixDir)/wine")
     }
 }

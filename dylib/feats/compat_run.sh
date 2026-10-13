@@ -151,6 +151,12 @@ np_display=$(sed -n 's/.*"display_name"[[:space:]]*"\(.*\)".*/\1/p' \
 np_root="$np_support/runners/$np_build"
 
 wine_unix="$np_root/lib/wine/x86_64-unix"
+wine_pe64="$np_root/lib/wine/x86_64-windows"
+# An arm64 runtime, which runs x86 code with FEX, has aarch64 dirs instead.
+if [ -d "$np_root/lib/wine/aarch64-unix" ]; then
+  wine_unix="$np_root/lib/wine/aarch64-unix"
+  wine_pe64="$np_root/lib/wine/aarch64-windows"
+fi
 WINELOADER="$wine_unix/wine"
 WINESERVER="$np_root/bin/wineserver"
 export WINELOADER WINESERVER
@@ -161,7 +167,7 @@ without_lock_fds() {
 }
 
 # If two WINEDLLPATH directories have the same DLL, Wine uses the one listed first.
-export WINEDLLPATH="$np_root/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
+export WINEDLLPATH="$wine_pe64:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
 export PATH="$np_root/bin:$PATH"
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
@@ -609,6 +615,20 @@ for np_overlay in $np_overlays; do
   [ -d "$np_dir" ] || continue
   HADRON_DLL_OVERLAY="${HADRON_DLL_OVERLAY:+$HADRON_DLL_OVERLAY:}$np_dir"
 done
+# The arm64 runtimes have neither DXMT nor D3DMetal, so those fall back to DXVK 1.10,
+# which FEX runs, rather than to Wine's own Direct3D.
+case "$np_graphics" in
+  dxmt|d3dmetal)
+    case ":${HADRON_DLL_OVERLAY:-}:" in
+      *"/dxmt:"*|*"/d3dmetal:"*) ;;
+      *)
+        if [ -d "$np_root/lib/graphics/dxvk1" ]; then
+          HADRON_DLL_OVERLAY="$np_root/lib/graphics/dxvk1${HADRON_DLL_OVERLAY:+:$HADRON_DLL_OVERLAY}"
+          np_overlays="dxvk1 $np_overlays"
+          echo "graphics: $np_graphics is not in this runtime, using DXVK 1.10" >> "$log" 2>&1 || true
+        fi ;;
+    esac ;;
+esac
 [ -z "${HADRON_DLL_OVERLAY:-}" ] || export HADRON_DLL_OVERLAY
 # Wine loads libd3dshared early so it can mark native code for Rosetta (patch 0004).
 case ":${HADRON_DLL_OVERLAY:-}:" in
@@ -617,7 +637,7 @@ case ":${HADRON_DLL_OVERLAY:-}:" in
 esac
 # Runtimes with the Vulkan loader pick its driver: KosmicKrisp for DXVK 3 and D3D8/9 on
 # DXVK, which need Vulkan features MoltenVK lacks, and MoltenVK otherwise. A driver set
-# in the launch options wins. A runtime without KosmicKrisp has MoltenVK only.
+# in the launch options wins. The arm64 runtimes have MoltenVK only.
 np_icd="$np_root/share/vulkan/icd.d"
 if [ -z "${VK_DRIVER_FILES:-}" ] && [ -d "$np_icd" ]; then
   np_driver=MoltenVK
@@ -639,7 +659,7 @@ in_template_env() {
     env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" TMPDIR="${TMPDIR:-/tmp}" \
     LANG="${LANG:-}" LC_ALL="${LC_ALL:-}" \
     PATH="$np_root/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-    WINEDLLPATH="$np_root/lib/wine/x86_64-windows:$wine_unix" \
+    WINEDLLPATH="$wine_pe64:$wine_unix" \
     WINELOADER="$WINELOADER" WINESERVER="$WINESERVER" WINEPREFIX="$prefix" "$@"
 }
 
@@ -1062,7 +1082,7 @@ fi
 bridge_src="$np_support/bridge"
 prefix_steam="$WINEPREFIX/drive_c/Program Files (x86)/Steam"
 verify_runner() {
-  for arch in i386-windows x86_64-windows "${wine_unix##*/}"; do
+  for arch in i386-windows "${wine_pe64##*/}" "${wine_unix##*/}"; do
     case "$arch" in
       *-unix) name="lsteamclient.so" ;;
       *) name="lsteamclient.dll" ;;
