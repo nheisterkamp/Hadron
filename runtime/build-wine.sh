@@ -24,6 +24,18 @@ DEPS="${DEPS:-$repo/scratch/deps-x86_64}"
 FREETYPE_URL="${FREETYPE_URL:-https://gitlab.freedesktop.org/freetype/freetype.git}"
 FREETYPE_TAG="${FREETYPE_TAG:-VER-2-13-3}"
 FREETYPE_SRC="${FREETYPE_SRC:-$repo/scratch/freetype}"
+ADDONS="${ADDONS:-$repo/scratch/downloads/addons}"
+
+# The versions Wine 11.15 asks for in dlls/appwiz.cpl/addons.c. Wine uses these shared
+# from share/wine instead of installing them into every prefix. The pins are of the
+# tarballs on dl.winehq.org; the mono one matches its GitHub release digest.
+MONO_VERSION=11.2.0
+GECKO_VERSION=2.47.4
+ADDON_PINS="
+wine-mono/$MONO_VERSION/wine-mono-$MONO_VERSION-x86.tar.xz c9fb2e2823acf30b000b8806177db0f40751786136dd3f8fb2be7897b1643d06 mono
+wine-gecko/$GECKO_VERSION/wine-gecko-$GECKO_VERSION-x86.tar.xz 2cfc8d5c948602e21eff8a78613e1826f2d033df9672cace87fed56e8310afb6 gecko
+wine-gecko/$GECKO_VERSION/wine-gecko-$GECKO_VERSION-x86_64.tar.xz fd88fc7e537d058d7a8abf0c1ebc90c574892a466de86706a26d254710a82814 gecko
+"
 OUT="${OUT:-$repo/out/runtime/wine-$WINE_VERSION}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 
@@ -102,6 +114,24 @@ cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/x86_64-unix/"
 
 # compat_run.sh finds the loader where CrossOver keeps it.
 [ -e "$OUT/lib/wine/x86_64-unix/wine" ] || cp "$OUT/bin/wine" "$OUT/lib/wine/x86_64-unix/wine"
+
+# Wine builds with -g, which is most of the size. The x86_64 unix halves stay unsigned.
+echo "==> stripping debug info"
+find "$OUT/lib/wine/i386-windows" -type f -exec i686-w64-mingw32-strip --strip-debug {} +
+find "$OUT/lib/wine/x86_64-windows" -type f -exec x86_64-w64-mingw32-strip --strip-debug {} +
+find "$OUT/lib/wine/x86_64-unix" -type f -name '*.so' -exec strip -S {} +
+strip -S "$OUT/bin/wine" "$OUT/bin/wineserver" "$OUT/lib/wine/x86_64-unix/wine"
+
+echo "==> adding wine-mono $MONO_VERSION and wine-gecko $GECKO_VERSION"
+mkdir -p "$ADDONS"
+echo "$ADDON_PINS" | while read -r path sha subdir; do
+    [ -n "$path" ] || continue
+    tarball="$ADDONS/${path##*/}"
+    [ -f "$tarball" ] || curl -fsSL -o "$tarball" "https://dl.winehq.org/wine/$path"
+    [ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$sha" ] || die "$tarball does not match its pin"
+    mkdir -p "$OUT/share/wine/$subdir"
+    tar -xJf "$tarball" -C "$OUT/share/wine/$subdir"
+done
 
 # The app identifies the runtime by this, see WineRuntime.swift.
 echo "wine-$WINE_VERSION" > "$OUT/notproton-runtime"
