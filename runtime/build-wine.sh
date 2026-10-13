@@ -532,8 +532,8 @@ if [ "$ARCH" = arm64 ]; then
     done
     cp "$fex/LICENSE" "$OUT/lib/wine/aarch64-windows/FEX-LICENSE"
 
-    # The loader as the main executable of a bundle that carries the profile. It finds
-    # ntdll.so beside itself, and ntdll takes everything else from where ntdll.so really is.
+    # The loader as the main executable of a bundle that carries the profile. Patch 0005
+    # has it look for ntdll.so beside the bundle, in the unix dir.
     profile="${HADRON_PROVISIONING_PROFILE:-}"
     if [ -z "$profile" ]; then
         newest=0
@@ -574,7 +574,6 @@ if [ "$ARCH" = arm64 ]; then
     sed "s/@BUNDLE_ID@/$WINE_BUNDLE_ID/" "$here/arm64/Info.plist" > "$app/Contents/Info.plist"
     cp "$profile" "$app/Contents/embedded.provisionprofile"
     mv "$unix/wine" "$app/Contents/MacOS/wine"
-    ln -s ../../../ntdll.so "$app/Contents/MacOS/ntdll.so"
     ln -s Wine.app/Contents/MacOS/wine "$unix/wine"
     rm -f "$OUT/bin/wine" && ln -s ../lib/wine/aarch64-unix/Wine.app/Contents/MacOS/wine "$OUT/bin/wine"
     entitlements="$WINE_BUILD/wine.entitlements"

@@ -74,7 +74,20 @@ diff --git a/loader/main.c b/loader/main.c
  #else
  
  /* the preloader will set this variable */
-@@ -171,6 +221,9 @@
+@@ -153,6 +203,12 @@
+ 
+     if ((p = remove_tail( dir, "/loader" )))
+         path = build_path( p, "dlls/ntdll/ntdll.so" );
++#if defined(__APPLE__) && defined(__aarch64__)
++    /* A loader that has to carry an entitlement is the main executable of a Wine.app
++     * in the unix dir, beside ntdll.so. */
++    else if ((p = remove_tail( dir, "/Wine.app/Contents/MacOS" )))
++        path = build_path( p, "ntdll.so" );
++#endif
+     else
+         path = build_path( dir, "ntdll.so" );
+ 
+@@ -171,6 +227,9 @@
  {
      void *handle;
  
