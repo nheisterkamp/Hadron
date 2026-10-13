@@ -39,6 +39,9 @@ SOURCE_SHA256=""
 SOURCE_SUBDIR=""
 STAGING_TAG=""
 STAGING_COMMIT=""
+# lsteamclient and steam.exe are built in the runtime's own tree unless this names
+# another runtime to take them from, for a Wine too old to build them.
+COMPONENTS_FROM=""
 # shellcheck disable=SC1090
 . "$definition"
 [ "$RUNTIME_ID" = "$1" ] || die "$definition names itself $RUNTIME_ID"
@@ -64,10 +67,18 @@ JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 MOLTENVK_VERSION=1.4.2
 MOLTENVK_SHA=f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
 
-# DXMT translates D3D10/11 to Metal. It is staged under lib/dxmt, not over Wine's own
-# d3d11 and dxgi, and the run script points HADRON_DLL_OVERLAY (patch 0003) at it.
+# Graphics backends are staged under lib/graphics/<name>, not over Wine's own DLLs, and
+# the run script points HADRON_DLL_OVERLAY (patch 0003) at the ones a game picked.
+# DXMT translates D3D10/11 to Metal.
 DXMT_VERSION=0.80
 DXMT_SHA=8f260e36b5739e68f3bad613381441385c4dc7b85b78ba8de653d5a6a264529d
+
+# DXVK 3.1.1 and 1.10.3 for MoltenVK, D3D8/9 on its own from DXVK 3.1.1, and cnc-ddraw,
+# from the wrapper template Sikarugir publishes. Its DLLs are native, so they are marked
+# builtin here to load through the overlay.
+TEMPLATE_URL=https://github.com/Sikarugir-App/Template/releases/download/v1.0/Template-1.0.21.tar.xz
+TEMPLATE_SHA=bbe996e4e4375318485953d0c7818b7b4b0a4dc1f13303bcc584f99f7602f78d
+TEMPLATE_BACKENDS="dxvk3:dxvk dxvk:dxvk1 d9vk:d9vk cnc_ddraw:ddraw"
 
 # TLS for schannel, which game launchers need to log in. GnuTLS and Nettle are checked
 # against their signatures (Zoltan Fridrich, Niels Möller), GMP against its published
@@ -84,6 +95,7 @@ TLS_LIBS="libgmp.10.dylib libnettle.8.dylib libhogweed.6.dylib libgnutls.30.dyli
 # These are the tarballs on dl.winehq.org; the mono ones match their GitHub release
 # digest. A Wine asking for a version not listed here stops the build.
 ADDON_PINS="
+wine-mono-10.4.1-x86.tar.xz a16606ef0724202e6a6848ece6e0cbba64d11e2f11aefe744af1d93c6d9f99bb
 wine-mono-11.2.0-x86.tar.xz c9fb2e2823acf30b000b8806177db0f40751786136dd3f8fb2be7897b1643d06
 wine-mono-11.3.0-x86.tar.xz 54a1b0111c3fe4b785eae688af94d27e64995707ad648b6fee8000381b80d298
 wine-gecko-2.47.4-x86.tar.xz 2cfc8d5c948602e21eff8a78613e1826f2d033df9672cace87fed56e8310afb6
@@ -141,8 +153,10 @@ prepare_source() {
         "$staging/staging/patchinstall.py" --destdir="$WINE_SRC" --all --no-autoconf
     fi
 
-    echo "==> registering lsteamclient and steam.exe with configure"
-    git -C "$WINE_SRC" apply --include=configure.ac "$repo/bridge/register-components.diff"
+    if [ -z "$COMPONENTS_FROM" ]; then
+        echo "==> registering lsteamclient and steam.exe with configure"
+        git -C "$WINE_SRC" apply --include=configure.ac "$repo/bridge/register-components.diff"
+    fi
     for patch in "$here"/patches/*.patch; do
         [ -f "$here/patches/$RUNTIME_ID/${patch##*/}" ] && patch="$here/patches/$RUNTIME_ID/${patch##*/}"
         echo "==> applying ${patch#"$here"/patches/}"
@@ -152,13 +166,15 @@ prepare_source() {
     # registration works on any Wine. wine-staging may also change the server protocol.
     ( cd "$WINE_SRC" && autoreconf -f && tools/make_requests )
 
-    "$repo/lsteamclient/fetch.sh"
-    "$repo/steam-shim/fetch-headers.sh"
-    # Whole trees, since makedep reads every source a Makefile.in lists.
-    mkdir -p "$WINE_SRC/dlls/lsteamclient" "$WINE_SRC/programs/steam.exe"
-    rsync -a "$repo/build/lsteamclient/" "$WINE_SRC/dlls/lsteamclient/"
-    rsync -a --exclude build.sh --exclude gen-implib.sh --exclude fetch-headers.sh \
-        "$repo/steam-shim/" "$WINE_SRC/programs/steam.exe/"
+    if [ -z "$COMPONENTS_FROM" ]; then
+        "$repo/lsteamclient/fetch.sh"
+        "$repo/steam-shim/fetch-headers.sh"
+        # Whole trees, since makedep reads every source a Makefile.in lists.
+        mkdir -p "$WINE_SRC/dlls/lsteamclient" "$WINE_SRC/programs/steam.exe"
+        rsync -a "$repo/build/lsteamclient/" "$WINE_SRC/dlls/lsteamclient/"
+        rsync -a --exclude build.sh --exclude gen-implib.sh --exclude fetch-headers.sh \
+            "$repo/steam-shim/" "$WINE_SRC/programs/steam.exe/"
+    fi
     touch "$WINE_SRC/.hadron-prepared"
 }
 
@@ -257,8 +273,10 @@ echo "==> building with $JOBS jobs"
 make -C "$WINE_BUILD" -j"$JOBS" $skip
 
 # The component scripts build lsteamclient and the steam.exe shim against this tree.
-WINE_BUILD="$WINE_BUILD" "$repo/lsteamclient/build.sh"
-WINE_BUILD="$WINE_BUILD" "$repo/steam-shim/build.sh"
+if [ -z "$COMPONENTS_FROM" ]; then
+    WINE_BUILD="$WINE_BUILD" "$repo/lsteamclient/build.sh"
+    WINE_BUILD="$WINE_BUILD" "$repo/steam-shim/build.sh"
+fi
 
 echo "==> staging into $OUT"
 rm -rf "$OUT"
@@ -268,10 +286,19 @@ make -C "$WINE_BUILD" install-lib DESTDIR="$OUT" $skip
 rm -f "$OUT"/lib/wine/*-windows/steam.exe
 cp "$DEPS/lib/libfreetype.6.dylib" "$DEPS/lib/libMoltenVK.dylib" "$OUT/lib/"
 for lib in $TLS_LIBS; do cp "$DEPS/lib/$lib" "$OUT/lib/"; done
-for arch in i386-windows x86_64-windows; do
-    cp "$WINE_BUILD/dlls/lsteamclient/$arch/lsteamclient.dll" "$OUT/lib/wine/$arch/"
-done
-cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/x86_64-unix/"
+if [ -n "$COMPONENTS_FROM" ]; then
+    # Its unixlib interface is stable across Wine 11, so these load in the older Wine.
+    donor="$repo/out/runtime/$COMPONENTS_FROM/lib/wine"
+    [ -f "$donor/x86_64-unix/lsteamclient.so" ] || die "build $COMPONENTS_FROM first, $RUNTIME_ID takes lsteamclient from it"
+    for arch in i386-windows x86_64-windows x86_64-unix; do
+        cp "$donor/$arch"/lsteamclient.* "$OUT/lib/wine/$arch/"
+    done
+else
+    for arch in i386-windows x86_64-windows; do
+        cp "$WINE_BUILD/dlls/lsteamclient/$arch/lsteamclient.dll" "$OUT/lib/wine/$arch/"
+    done
+    cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/x86_64-unix/"
+fi
 
 # compat_run.sh runs the loader from the unix dir, beside ntdll.so.
 [ -e "$OUT/lib/wine/x86_64-unix/wine" ] || cp "$OUT/bin/wine" "$OUT/lib/wine/x86_64-unix/wine"
@@ -304,18 +331,44 @@ for addon in "mono/wine-mono/$mono_version/wine-mono-$mono_version-x86.tar.xz" \
     tar -xJf "$tarball" -C "$OUT/share/wine/$subdir"
 done
 
-echo "==> adding DXMT $DXMT_VERSION under lib/dxmt"
+echo "==> adding DXMT $DXMT_VERSION under lib/graphics/dxmt"
 tarball="$DOWNLOADS/dxmt-v$DXMT_VERSION-builtin.tar.gz"
 [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
     "https://github.com/3Shain/dxmt/releases/download/v$DXMT_VERSION/dxmt-v$DXMT_VERSION-builtin.tar.gz"
 [ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$DXMT_SHA" ] || die "$tarball does not match its pin"
-mkdir -p "$OUT/lib/dxmt"
-tar -xzf "$tarball" -C "$OUT/lib/dxmt" --strip-components 1
+mkdir -p "$OUT/lib/graphics/dxmt"
+tar -xzf "$tarball" -C "$OUT/lib/graphics/dxmt" --strip-components 1
 # winemetal is DXMT's bridge to Metal, imported by its d3d11 and dxgi. Wine resolves
 # a builtin only when the prefix has a placeholder for it, and wineboot makes those
 # for what is in lib/wine, so winemetal goes there. Nothing else imports it.
 for arch in i386-windows x86_64-windows x86_64-unix; do
-    cp "$OUT"/lib/dxmt/$arch/winemetal.* "$OUT/lib/wine/$arch/"
+    cp "$OUT"/lib/graphics/dxmt/$arch/winemetal.* "$OUT/lib/wine/$arch/"
+done
+
+tarball="$DOWNLOADS/${TEMPLATE_URL##*/}"
+[ -f "$tarball" ] || curl -fsSL -o "$tarball" "$TEMPLATE_URL"
+[ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$TEMPLATE_SHA" ] || die "$tarball does not match its pin"
+renderers="$DOWNLOADS/template-renderers"
+if [ ! -d "$renderers" ]; then
+    rm -rf "$renderers.new" && mkdir -p "$renderers.new"
+    template="${tarball##*/}"
+    tar -xJf "$tarball" -C "$renderers.new" --strip-components 4 \
+        "${template%.tar.xz}.app/Contents/Frameworks/renderer"
+    mv "$renderers.new" "$renderers"
+fi
+for pair in $TEMPLATE_BACKENDS; do
+    from="${pair%%:*}"
+    name="${pair#*:}"
+    echo "==> adding $(head -1 "$renderers/$from/version") under lib/graphics/$name"
+    for arch in i386-windows x86_64-windows; do
+        [ -d "$renderers/$from/wine/$arch" ] || continue
+        mkdir -p "$OUT/lib/graphics/$name/$arch"
+        for dll in "$renderers/$from/wine/$arch"/*.dll; do
+            cp "$dll" "$OUT/lib/graphics/$name/$arch/"
+            "$WINE_BUILD/tools/winebuild/winebuild" --builtin "$OUT/lib/graphics/$name/$arch/${dll##*/}"
+        done
+    done
+    cp "$renderers/$from/LICENSE" "$renderers/$from/version" "$OUT/lib/graphics/$name/"
 done
 
 # The app identifies the runtime by this, see RuntimeSource.swift.

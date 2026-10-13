@@ -61,7 +61,9 @@ fi
 check "HTTPS works through schannel" "$wine" tls64.exe
 check "Wine's own d3d11 creates a device" "$wine" overlay64.exe
 check "DXMT comes through the overlay" sh -c \
-    "HADRON_DLL_OVERLAY='$runtime/lib/dxmt' '$wine' overlay64.exe | grep -q '^d3d11: dxmt'"
+    "HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxmt' '$wine' overlay64.exe | grep -q '^d3d11: dxmt'"
+check "DXVK comes through the overlay" sh -c \
+    "HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxvk' '$wine' overlay64.exe | grep -q '^d3d11: dxvk'"
 
 if [ "$fails" -eq 0 ]; then
     echo "==> all checks hold"

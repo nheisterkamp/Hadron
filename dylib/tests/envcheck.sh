@@ -45,16 +45,29 @@ graphics=$(sed -n '/^unset HADRON_DLL_OVERLAY$/,/^echo "graphics:/p' "$SRC")
 # shellcheck disable=SC2016 # Match the literal launcher loop.
 forward=$(sed -n '/^for name in $(env /,/^done$/p' "$SRC")
 [ -n "$graphics" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }
-unset HADRON_GRAPHICS
+unset HADRON_GRAPHICS HADRON_DDRAW
 eval "$graphics"
-is "a runtime without DXMT leaves the overlay unset" "" "${HADRON_DLL_OVERLAY:-}"
+is "a runtime without backends leaves the overlay unset" "" "${HADRON_DLL_OVERLAY:-}"
 mkdir -p "$np_root/lib/dxmt"
 eval "$graphics"
-is "DXMT is the default" "$np_root/lib/dxmt" "${HADRON_DLL_OVERLAY:-}"
-is "helpers inherit the overlay" "$np_root/lib/dxmt" "$(sh -c 'printf %s "$HADRON_DLL_OVERLAY"')"
-HADRON_GRAPHICS=wined3d
+is "a runtime from before lib/graphics still gets DXMT" "$np_root/lib/dxmt" "${HADRON_DLL_OVERLAY:-}"
+mkdir -p "$np_root/lib/graphics/dxmt" "$np_root/lib/graphics/d9vk" "$np_root/lib/graphics/dxvk" \
+  "$np_root/lib/graphics/dxvk1" "$np_root/lib/graphics/ddraw"
 eval "$graphics"
-is "wined3d leaves Wine's own Direct3D" "" "${HADRON_DLL_OVERLAY:-}"
+is "DXMT with D3D8/9 on DXVK is the default" "$np_root/lib/graphics/dxmt:$np_root/lib/graphics/d9vk" "${HADRON_DLL_OVERLAY:-}"
+is "helpers inherit the overlay" "$np_root/lib/graphics/dxmt:$np_root/lib/graphics/d9vk" "$(sh -c 'printf %s "$HADRON_DLL_OVERLAY"')"
+HADRON_GRAPHICS=dxvk
+eval "$graphics"
+is "dxvk picks DXVK 3.1" "$np_root/lib/graphics/dxvk" "${HADRON_DLL_OVERLAY:-}"
+HADRON_GRAPHICS=dxvk1
+eval "$graphics"
+is "dxvk1 picks DXVK 1.10" "$np_root/lib/graphics/dxvk1" "${HADRON_DLL_OVERLAY:-}"
+HADRON_GRAPHICS=wined3d HADRON_DDRAW=cnc-ddraw
+eval "$graphics"
+is "wined3d leaves Wine's own Direct3D, cnc-ddraw adds itself" "$np_root/lib/graphics/ddraw" "${HADRON_DLL_OVERLAY:-}"
+HADRON_DDRAW=""
+eval "$graphics"
+is "wined3d alone leaves Wine's own Direct3D" "" "${HADRON_DLL_OVERLAY:-}"
 unset HADRON_GRAPHICS
 DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=2.0"
 UNRELATED_SETTING=1

@@ -1,0 +1,62 @@
+diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
+index 2b6dbf2..d6ef11f 100644
+--- a/dlls/ntdll/unix/loader.c
++++ b/dlls/ntdll/unix/loader.c
+@@ -354,6 +354,8 @@ static void set_home_dir(void)
+     }
+     if ((p = strrchr( name, '/' ))) name = p + 1;
+     if ((p = strrchr( name, '\\' ))) name = p + 1;
++    /* Hadron: same profile name as Proton, which Steam Cloud paths expect. */
++    name = "steamuser";
+     home_dir = strdup( home );
+     user_name = strdup( name );
+ }
+diff --git a/dlls/advapi32/advapi.c b/dlls/advapi32/advapi.c
+index 1d36dd4..4f183f2 100644
+--- a/dlls/advapi32/advapi.c
++++ b/dlls/advapi32/advapi.c
+@@ -48,11 +48,11 @@ BOOL WINAPI GetUserNameA( LPSTR name, LPDWORD size )
+     DWORD len = GetEnvironmentVariableA( "WINEUSERNAME", name, *size );
+     BOOL ret;
+ 
+-    /* CrossOver Hack 12735: Use a consistent username */
++    /* CrossOver Hack 12735: Use a consistent username, steamuser as in Proton */
+     if (!getenv( "CX_REPORT_REAL_USERNAME" ))
+     {
+-        len = sizeof("crossover");
+-        if ((ret = (len <= *size))) strcpy( name, "crossover" );
++        len = sizeof("steamuser");
++        if ((ret = (len <= *size))) strcpy( name, "steamuser" );
+         else SetLastError( ERROR_INSUFFICIENT_BUFFER );
+         *size = len;
+         return ret;
+@@ -73,11 +73,11 @@ BOOL WINAPI GetUserNameW( LPWSTR name, LPDWORD size )
+     DWORD len = GetEnvironmentVariableW( L"WINEUSERNAME", name, *size );
+     BOOL ret;
+ 
+-    /* CrossOver Hack 12735: Use a consistent username */
++    /* CrossOver Hack 12735: Use a consistent username, steamuser as in Proton */
+     if (!getenv( "CX_REPORT_REAL_USERNAME" ))
+     {
+-        len = ARRAY_SIZE( L"crossover" );
+-        if ((ret = (len <= *size))) wcscpy( name, L"crossover" );
++        len = ARRAY_SIZE( L"steamuser" );
++        if ((ret = (len <= *size))) wcscpy( name, L"steamuser" );
+         else SetLastError( ERROR_INSUFFICIENT_BUFFER );
+         *size = len;
+         return ret;
+diff --git a/dlls/shell32/shellpath.c b/dlls/shell32/shellpath.c
+index adfa296..881b188 100644
+--- a/dlls/shell32/shellpath.c
++++ b/dlls/shell32/shellpath.c
+@@ -2632,8 +2632,8 @@ static HRESULT _SHExpandEnvironmentStrings(LPCWSTR szSrc, LPWSTR szDest)
+         }
+         else if (!wcsnicmp(szTemp, L"%USERPROFILE%", lstrlenW(L"%USERPROFILE%")))
+         {
+-            /* CrossOver Hack 12735 */
+-            static const WCHAR userName[] = {'c','r','o','s','s','o','v','e','r',0};
++            /* CrossOver Hack 12735, steamuser as in Proton */
++            static const WCHAR userName[] = {'s','t','e','a','m','u','s','e','r',0};
+ 
+             lstrcpyW(szDest, szProfilesPrefix);
+             PathAppendW(szDest, userName);

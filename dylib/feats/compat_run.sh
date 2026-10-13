@@ -587,14 +587,27 @@ if [ -z "$np_build" ] || [ ! -d "$np_root/lib/wine" ]; then
 fi
 echo "runner: build $np_build ($np_display) at $np_root" >> "$log" 2>&1 || true
 
-# The runtime carries DXMT beside Wine's own d3d11 and dxgi, and its Wine searches
-# HADRON_DLL_OVERLAY first. HADRON_GRAPHICS=wined3d in a game's launch options
-# leaves that game on Wine's own.
+# Each runtime carries graphics backends under lib/graphics, beside Wine's own Direct3D,
+# and its Wine searches HADRON_DLL_OVERLAY first. HADRON_GRAPHICS in a game's launch
+# options picks dxmt (D3D10/11 on Metal, D3D8/9 on DXVK), dxvk (DXVK 3.1), dxvk1
+# (DXVK 1.10) or wined3d (Wine's own). HADRON_DDRAW=cnc-ddraw adds cnc-ddraw.
 unset HADRON_DLL_OVERLAY
 np_graphics="${HADRON_GRAPHICS:-dxmt}"
-if [ "$np_graphics" = dxmt ] && [ -d "$np_root/lib/dxmt" ]; then
-  export HADRON_DLL_OVERLAY="$np_root/lib/dxmt"
-fi
+case "$np_graphics" in
+  dxmt) np_overlays="dxmt d9vk" ;;
+  dxvk) np_overlays="dxvk" ;;
+  dxvk1) np_overlays="dxvk1" ;;
+  *) np_overlays="" ;;
+esac
+[ "${HADRON_DDRAW:-}" != cnc-ddraw ] || np_overlays="$np_overlays ddraw"
+for np_overlay in $np_overlays; do
+  np_dir="$np_root/lib/graphics/$np_overlay"
+  # Runtimes set up before lib/graphics kept DXMT in lib/dxmt.
+  [ -d "$np_dir" ] || [ "$np_overlay" != dxmt ] || np_dir="$np_root/lib/dxmt"
+  [ -d "$np_dir" ] || continue
+  HADRON_DLL_OVERLAY="${HADRON_DLL_OVERLAY:+$HADRON_DLL_OVERLAY:}$np_dir"
+done
+[ -z "${HADRON_DLL_OVERLAY:-}" ] || export HADRON_DLL_OVERLAY
 echo "graphics: $np_graphics (${HADRON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
 
 # Each runtime build needs its own template.
