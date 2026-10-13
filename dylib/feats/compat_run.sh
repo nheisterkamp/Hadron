@@ -617,6 +617,18 @@ if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
 fi
 echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
 
+# A self-built runtime carries DXMT beside Wine's own d3d11 and dxgi, and its Wine
+# searches NOTPROTON_DLL_OVERLAY first. NOTPROTON_GRAPHICS=wined3d in a game's launch
+# options leaves that game on Wine's own.
+unset NOTPROTON_DLL_OVERLAY
+if [ -f "$CX_ROOT/notproton-runtime" ]; then
+  np_graphics="${NOTPROTON_GRAPHICS:-dxmt}"
+  if [ "$np_graphics" = dxmt ] && [ -d "$CX_ROOT/lib/dxmt" ]; then
+    export NOTPROTON_DLL_OVERLAY="$CX_ROOT/lib/dxmt"
+  fi
+  echo "graphics: $np_graphics (${NOTPROTON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
+fi
+
 # Each CrossOver build needs its own template.
 # FEX builds need two, one for FEX/arm64 Wine and one for Rosetta/AMD64 Wine
 runner_id=""
@@ -1513,6 +1525,7 @@ set -- \
   --env WINESERVER="$WINESERVER" \
   --env WINEDLLPATH="$WINEDLLPATH" \
   --env WINEDLLOVERRIDES="$WINEDLLOVERRIDES" \
+  --env NOTPROTON_DLL_OVERLAY="${NOTPROTON_DLL_OVERLAY:-}" \
   --env WINEMSYNC="$WINEMSYNC" \
   --env WINEPREFIX="$WINEPREFIX" \
   --env WINEDEBUG="$WINEDEBUG" \

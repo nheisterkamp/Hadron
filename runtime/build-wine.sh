@@ -25,6 +25,17 @@ FREETYPE_URL="${FREETYPE_URL:-https://gitlab.freedesktop.org/freetype/freetype.g
 FREETYPE_TAG="${FREETYPE_TAG:-VER-2-13-3}"
 FREETYPE_SRC="${FREETYPE_SRC:-$repo/scratch/freetype}"
 ADDONS="${ADDONS:-$repo/scratch/downloads/addons}"
+DOWNLOADS="${DOWNLOADS:-$repo/scratch/downloads}"
+
+# Vulkan for winevulkan, DXVK and wined3d's Vulkan renderer. Pinned to the digest
+# GitHub publishes for the release asset.
+MOLTENVK_VERSION=1.4.2
+MOLTENVK_SHA=f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
+
+# DXMT translates D3D10/11 to Metal. It is staged under lib/dxmt, not over Wine's own
+# d3d11 and dxgi, and the run script points NOTPROTON_DLL_OVERLAY (patch 0003) at it.
+DXMT_VERSION=0.80
+DXMT_SHA=8f260e36b5739e68f3bad613381441385c4dc7b85b78ba8de653d5a6a264529d
 
 # The versions Wine 11.15 asks for in dlls/appwiz.cpl/addons.c. Wine uses these shared
 # from share/wine instead of installing them into every prefix. The pins are of the
@@ -73,6 +84,21 @@ for patch in "$here"/patches/*.patch; do
     fi
 done
 
+if [ ! -f "$DEPS/lib/libMoltenVK.dylib" ]; then
+    echo "==> adding x86_64 MoltenVK $MOLTENVK_VERSION to $DEPS"
+    tarball="$DOWNLOADS/MoltenVK-$MOLTENVK_VERSION-macos.tar"
+    mkdir -p "$DOWNLOADS" "$DEPS/lib"
+    [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
+        "https://github.com/KhronosGroup/MoltenVK/releases/download/v$MOLTENVK_VERSION/MoltenVK-macos.tar"
+    [ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$MOLTENVK_SHA" ] || die "$tarball does not match its pin"
+    unpacked="$DOWNLOADS/MoltenVK-$MOLTENVK_VERSION"
+    rm -rf "$unpacked" && mkdir -p "$unpacked"
+    tar -xf "$tarball" -C "$unpacked"
+    lipo -thin x86_64 "$unpacked/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib" \
+        -output "$DEPS/lib/libMoltenVK.dylib"
+    install_name_tool -id "$UNIX_TO_LIB/libMoltenVK.dylib" "$DEPS/lib/libMoltenVK.dylib"
+fi
+
 if [ ! -f "$WINE_BUILD/Makefile" ]; then
     echo "==> configuring $WINE_BUILD"
     mkdir -p "$WINE_BUILD"
@@ -80,10 +106,13 @@ if [ ! -f "$WINE_BUILD/Makefile" ]; then
         --prefix=/ --enable-archs=i386,x86_64 --without-x \
         --host=x86_64-apple-darwin CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
         FREETYPE_CFLAGS="-I$DEPS/include/freetype2" FREETYPE_LIBS="-L$DEPS/lib -lfreetype" \
-        ac_cv_lib_soname_freetype="$UNIX_TO_LIB/libfreetype.6.dylib" )
+        ac_cv_lib_soname_freetype="$UNIX_TO_LIB/libfreetype.6.dylib" \
+        ac_cv_lib_soname_MoltenVK="$UNIX_TO_LIB/libMoltenVK.dylib" )
 fi
 grep -q '^host_cpu = x86_64' "$WINE_BUILD/config.status" \
     || die "configure did not take the x86_64 host"
+grep -q 'SONAME_LIBVULKAN "@loader_path' "$WINE_BUILD/include/config.h" \
+    || die "configure did not take MoltenVK, remove $WINE_BUILD to configure again"
 
 # tools/sfnt2fon links freetype too, and runs from the build tree during the build.
 ln -sf "$DEPS/lib/libfreetype.6.dylib" "$WINE_BUILD/libfreetype.6.dylib"
@@ -106,7 +135,7 @@ rm -rf "$OUT"
 make -C "$WINE_BUILD" install-lib DESTDIR="$OUT" $skip
 # steam.exe goes into each prefix from the bridge, as with CrossOver, not in as a builtin.
 rm -f "$OUT"/lib/wine/*-windows/steam.exe
-cp "$DEPS/lib/libfreetype.6.dylib" "$OUT/lib/"
+cp "$DEPS/lib/libfreetype.6.dylib" "$DEPS/lib/libMoltenVK.dylib" "$OUT/lib/"
 for arch in i386-windows x86_64-windows; do
     cp "$WINE_BUILD/dlls/lsteamclient/$arch/lsteamclient.dll" "$OUT/lib/wine/$arch/"
 done
@@ -131,6 +160,20 @@ echo "$ADDON_PINS" | while read -r path sha subdir; do
     [ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$sha" ] || die "$tarball does not match its pin"
     mkdir -p "$OUT/share/wine/$subdir"
     tar -xJf "$tarball" -C "$OUT/share/wine/$subdir"
+done
+
+echo "==> adding DXMT $DXMT_VERSION under lib/dxmt"
+tarball="$DOWNLOADS/dxmt-v$DXMT_VERSION-builtin.tar.gz"
+[ -f "$tarball" ] || curl -fsSL -o "$tarball" \
+    "https://github.com/3Shain/dxmt/releases/download/v$DXMT_VERSION/dxmt-v$DXMT_VERSION-builtin.tar.gz"
+[ "$(shasum -a 256 "$tarball" | cut -d' ' -f1)" = "$DXMT_SHA" ] || die "$tarball does not match its pin"
+mkdir -p "$OUT/lib/dxmt"
+tar -xzf "$tarball" -C "$OUT/lib/dxmt" --strip-components 1
+# winemetal is DXMT's bridge to Metal, imported by its d3d11 and dxgi. Wine resolves
+# a builtin only when the prefix has a placeholder for it, and wineboot makes those
+# for what is in lib/wine, so winemetal goes there. Nothing else imports it.
+for arch in i386-windows x86_64-windows x86_64-unix; do
+    cp "$OUT"/lib/dxmt/$arch/winemetal.* "$OUT/lib/wine/$arch/"
 done
 
 # The app identifies the runtime by this, see WineRuntime.swift.
