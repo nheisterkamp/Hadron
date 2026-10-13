@@ -1459,7 +1459,7 @@ struct PrefixLastBuildTests {
         #expect(PrefixTools.tool(for: prefix, among: fexOnly, runners: runners) == nil)
 
         let both = fexOnly + SupportedRunners.tools(for: [shippedRuntime])
-        #expect(PrefixTools.tool(for: prefix, among: both, runners: runners)?.name == "hadron-proton-wine")
+        #expect(PrefixTools.tool(for: prefix, among: both, runners: runners)?.name == "hadron-proton-\(shippedRuntimeID)")
     }
 
     @Test("A prefix another Wine updated gets no tool, so nothing runs over it")

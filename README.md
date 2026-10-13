@@ -13,9 +13,15 @@ Hadron here, not there.
 - **Steam Play in macOS Steam.** A dylib injected into the Steam client enables the
   Steam Play support that macOS Steam carries but keeps switched off, and registers
   Hadron as a compatibility tool.
-- **The Wine runtime.** `runtime/build-wine.sh` builds an x86_64 Wine 11.15 that runs
+- **The Wine runtimes.** `runtime/build-wine.sh` builds x86_64 Wine runtimes that run
   under Rosetta, with lsteamclient, the steam.exe shim, wine-mono and wine-gecko built
-  in. Three small patches in `runtime/patches` redirect Steam's steamclient to
+  in. Each runtime is a small definition in `runtime/runtimes`, and each shows up in
+  Steam as its own compatibility tool:
+  - **Wine 11.15**, the default.
+  - **Wine Staging 11.15**, with the wine-staging patch set.
+  - **Wine 11.19**, the newest development release.
+
+  Three small patches in `runtime/patches` redirect Steam's steamclient to
   lsteamclient in Wine's loader, name the prefix profile `steamuser` like Proton does,
   and let a DLL overlay stand in for Wine's own Direct3D.
 - **Graphics.** Direct3D 10/11 goes to Metal through [DXMT](https://github.com/3Shain/dxmt).
@@ -27,7 +33,9 @@ Hadron here, not there.
 Early. The runtime boots, the steamclient redirect works for 32 and 64 bit games, and
 DXMT creates Direct3D 11 devices. Not yet done:
 
-- an arm64 runtime. The runtime is Rosetta only.
+- an arm64 runtime. The runtimes need Rosetta, which Apple drops in macOS 28. Running
+  Wine natively needs Wine patches that are not upstream yet, a macOS port of FEX for
+  the x86 games, which is not public, and Apple entitlements tied to a developer account.
 - Direct3D 12 beyond what Wine's own vkd3d manages on MoltenVK.
 - TLS (schannel) inside Wine, which needs an x86_64 GnuTLS.
 - automatic updates. They are switched off until Hadron publishes signed releases.
@@ -39,12 +47,12 @@ matchmake.
 
 ```
 brew install mingw-w64 bison flex autoconf cmake ninja
-make runtime
+make runtime                  # every runtime in runtime/runtimes
 make bridge dobby fonts app
 ```
 
 `make fonts` also needs FontForge, GNU patch and afdko 4.0. Then open `out/Hadron.app`,
-add `out/runtime/wine-11.15` with "Add Wine Runtime…" (or put it in
+add a folder from `out/runtime` with "Add Wine Runtime…" (or put it in
 `~/Library/Application Support/hadron/runtimes/`), set it up, and install into Steam.
 
 ## Source layout

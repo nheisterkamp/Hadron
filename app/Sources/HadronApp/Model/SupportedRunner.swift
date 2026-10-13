@@ -45,16 +45,22 @@ struct InstalledTool: Sendable, Hashable, Identifiable {
 
 enum SupportedRunners {
 
-    // The first tool served is what windows-only games get when Steam has no mapping.
+    // One per definition in runtime/runtimes. The first tool served is what windows-only
+    // games get when Steam has no mapping.
     static let all: [RunnerBuild] = [
-        RunnerBuild(
-            id: "wine-11.15",
-            releaseVersion: "Wine 11.15",
-            tools: [
-                CompatTool(name: "hadron-proton-wine", flavor: .rosetta, display: "Hadron Wine 11.15"),
-            ]
-        ),
+        rosetta(id: "wine-11.15", name: "Wine 11.15"),
+        rosetta(id: "wine-staging-11.15", name: "Wine Staging 11.15"),
+        rosetta(id: "wine-11.19", name: "Wine 11.19"),
+        rosetta(id: "crossover-26.3", name: "CrossOver Wine 26.3"),
     ]
+
+    // Steam maps Cloud save paths into a prefix only for a tool whose name contains
+    // "proton", so every tool is hadron-proton-<id>.
+    private static func rosetta(id: String, name: String) -> RunnerBuild {
+        RunnerBuild(id: id, releaseVersion: name, tools: [
+            CompatTool(name: "hadron-proton-\(id)", flavor: .rosetta, display: "Hadron \(name)"),
+        ])
+    }
 
     static func tools(for builds: [RunnerBuild]) -> [InstalledTool] {
         let installed = Set(builds.map(\.id))

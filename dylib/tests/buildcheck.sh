@@ -6,7 +6,7 @@ SRC="${1:-$(dirname "$0")/../feats/compat_run.sh}"
 
 extract() { sed -n "/^$1() {\$/,/^}\$/p" "$SRC"; }
 functions=""
-for name in alert_safe last_wine_build refuse_other_build claim_prefix; do
+for name in last_wine_build note_other_build claim_prefix; do
 	body=$(extract "$name")
 	[ -n "$body" ] || { echo "FAIL: $name not found in $SRC"; exit 1; }
 	functions="$functions
@@ -45,15 +45,13 @@ launch() {
 		np_build=$build
 		np_display="display of $build"
 		np_root="$np_support/runners/$build"
-		log=/dev/null
-		# shellcheck disable=SC2329 # called by the extracted refusal
-		show_alert() { printf 'alert: %s\n' "$2"; }
+		log="$data/out"
 		eval "$functions"
-		refuse_other_build
+		note_other_build
 		claim_prefix
-	) > "$data/out" 2>&1 && status=0 || status=$?
+	) >> "$data/out" 2>&1 && status=0 || status=$?
 	echo "status=$status"
-	grep -o 'last run by [^,]*' "$data/out" || true
+	grep -o 'moves from .* to' "$data/out" || true
 	[ ! -f "$data/hadron-build" ] || head -1 "$data/hadron-build"
 }
 
@@ -62,25 +60,28 @@ is "a fresh prefix is claimed" "status=0
 wine-11.15" "$(launch wine-11.15 "" "")"
 is "a prefix this build last updated is claimed" "status=0
 wine-11.15" "$(launch wine-11.15 "$(mtime wine-11.15)" "")"
-is "a prefix another clone updated is refused and named" "status=1
-last run by Hadron Wine 12.0 (FEX)" "$(launch wine-11.15 "$(mtime wine-12.0-arm64)" "")"
-is "a prefix no clone updated is refused" "status=1
-last run by an earlier Wine runtime" "$(launch wine-11.15 1 "")"
+is "a prefix another runtime updated moves over, named" "status=0
+moves from Hadron Wine 12.0 (FEX) to
+wine-11.15" "$(launch wine-11.15 "$(mtime wine-12.0-arm64)" "")"
+is "a prefix no runtime updated moves over" "status=0
+moves from an earlier Wine runtime to
+wine-11.15" "$(launch wine-11.15 1 "")"
 is "updates the user disabled say nothing, so the prefix is claimed" "status=0
 wine-11.15" "$(launch wine-11.15 disable "")"
 
 clone wine-12.0 202608211200
-is "a prefix either of two clones updated names neither" "status=1
-last run by an earlier Wine runtime" "$(launch wine-11.15 "$(mtime wine-12.0)" "")"
+is "a prefix either of two runtimes updated names neither" "status=0
+moves from an earlier Wine runtime to
+wine-11.15" "$(launch wine-11.15 "$(mtime wine-12.0)" "")"
 
 echo "== prefixes with a record =="
 is "the record wins over the Wine that updated the prefix" "status=0
 wine-12.0-arm64" "$(launch wine-12.0-arm64 "$(mtime wine-11.15)" "wine-12.0-arm64
 Hadron Wine 12.0 (FEX)
 ")"
-is "a record for another build is refused" "status=1
-last run by Hadron Wine 12.0 (FEX)
-wine-12.0-arm64" "$(launch wine-11.15 "" "wine-12.0-arm64
+is "a prefix recorded for another runtime moves over and is recorded anew" "status=0
+moves from Hadron Wine 12.0 (FEX) to
+wine-11.15" "$(launch wine-11.15 "" "wine-12.0-arm64
 Hadron Wine 12.0 (FEX)
 ")"
 

@@ -531,10 +531,9 @@ bridge:
 	steam-shim/build.sh
 	@echo "==> Built the bridge, now run: $(MAKE) app-payload"
 
-# The Wine runtime the app sets up as the compatibility tool, see runtime/build-wine.sh.
+# Every Wine runtime in runtime/runtimes, see runtime/build-wine.sh.
 runtime:
-	bridge/setup-wine-tree.sh
-	runtime/build-wine.sh
+	runtime/build-wine.sh --all
 
 fonts:
 	fonts/build.sh

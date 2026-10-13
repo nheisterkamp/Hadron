@@ -51,7 +51,7 @@ struct CompatToolOrderTests {
     func order() throws {
         let tools = SupportedRunners.tools(for: SupportedRunners.all.reversed())
         #expect(tools.map(\.name) == SupportedRunners.all.flatMap(\.tools).map(\.name))
-        #expect(tools.first?.name == "hadron-proton-wine")
+        #expect(tools.first?.name == "hadron-proton-\(shippedRuntimeID)")
         #expect(tools.first?.build == shippedRuntimeID)
     }
 
@@ -89,7 +89,7 @@ struct CompatToolOrderTests {
     func contents() throws {
         let tools = SupportedRunners.tools(for: [shippedRuntime])
         #expect(CompatToolList.contents(tools)
-            == "hadron-proton-wine\t\(shippedRuntimeID)\trosetta\tHadron Wine 11.15\n")
+            == "hadron-proton-\(shippedRuntimeID)\t\(shippedRuntimeID)\trosetta\tHadron Wine 11.15\n")
     }
 }
 

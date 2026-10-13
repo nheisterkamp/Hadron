@@ -6,22 +6,50 @@ import Testing
 @Suite("The shipped runtime build")
 struct SupportedRuntimeTests {
 
-    @Test("The shipped runtime build serves one Rosetta tool")
+    @Test("The default runtime build comes first and serves one Rosetta tool")
     func shippedBuild() throws {
         let build = try #require(SupportedRunners.build(id: shippedRuntimeID))
-        #expect(SupportedRunners.all.map(\.id) == [shippedRuntimeID])
+        #expect(SupportedRunners.all.first?.id == shippedRuntimeID)
         #expect(build.tools.map(\.flavor) == [.rosetta])
-        #expect(build.tools.map(\.name) == ["hadron-proton-wine"])
+        #expect(build.tools.map(\.name) == ["hadron-proton-\(shippedRuntimeID)"])
         #expect(SupportedRunners.displayVersion(forID: shippedRuntimeID) == build.releaseVersion)
         #expect(SupportedRunners.displayVersion(forID: "wine-0.1") == "wine-0.1")
         #expect(SupportedRunners.build(id: "wine-0.1") == nil)
+    }
+
+    // build-wine.sh builds what runtime/runtimes defines, and the app can only serve
+    // what it lists, so a definition missing from either side is a runtime nobody gets.
+    @Test("The app lists exactly the runtimes runtime/runtimes defines, by id and name")
+    func agreesWithDefinitions() throws {
+        let definitions = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "runtime/runtimes")
+        let files = try FileManager.default.contentsOfDirectory(at: definitions, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "env" }
+        var defined: [String: String] = [:]
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            func value(_ key: String) -> String? {
+                text.split(separator: "\n").first { $0.hasPrefix("\(key)=") }
+                    .map { $0.dropFirst(key.count + 1).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+            }
+            let id = try #require(value("RUNTIME_ID"))
+            #expect(file.deletingPathExtension().lastPathComponent == id)
+            defined[id] = value("RUNTIME_NAME")
+        }
+        #expect(defined.count == SupportedRunners.all.count)
+        for build in SupportedRunners.all {
+            #expect(defined[build.id] == build.releaseVersion, "\(build.id)")
+            #expect(build.tools.allSatisfy { $0.name == "hadron-proton-\(build.id)" && $0.name.contains("proton") })
+        }
     }
 
     @Test("Tools are served only for the builds that are installed")
     func toolsForInstalledBuilds() {
         #expect(SupportedRunners.tools(for: []).isEmpty)
         let tools = SupportedRunners.tools(for: [shippedRuntime])
-        #expect(tools.map(\.name) == ["hadron-proton-wine"])
+        #expect(tools.map(\.name) == ["hadron-proton-\(shippedRuntimeID)"])
         #expect(tools.allSatisfy { $0.build == shippedRuntimeID })
     }
 }

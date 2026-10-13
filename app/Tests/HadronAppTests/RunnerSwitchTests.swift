@@ -63,7 +63,7 @@ struct RunnerPrepareTests {
         #expect(calls.verified == [shippedRuntimeID])
         #expect(calls.phases.map(\.label) == [RunnerSetup.Phase.installing.label, RunnerSetup.Phase.finished.label])
         #expect(toolList(runners) == CompatToolList.contents(SupportedRunners.tools(for: [shippedRuntime])))
-        #expect(toolList(runners)?.hasPrefix("hadron-proton-wine\t\(shippedRuntimeID)\trosetta\t") == true)
+        #expect(toolList(runners)?.hasPrefix("hadron-proton-\(shippedRuntimeID)\t\(shippedRuntimeID)\trosetta\t") == true)
 
         let again = try prepare(shippedRuntime, runners: runners)
         #expect(!again.toolsChanged)
