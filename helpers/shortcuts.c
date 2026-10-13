@@ -80,7 +80,7 @@ static int same_entry(int parent, const char *name, int fd) {
 
 static void replace_icon(int parent, const char *name, int app, int resources, const blob_t *icon) {
     char temp[64];
-    snprintf(temp, sizeof(temp), ".notproton-icon-%d-%08x", (int)getpid(), arc4random());
+    snprintf(temp, sizeof(temp), ".hadron-icon-%d-%08x", (int)getpid(), arc4random());
     int fd = openat(resources, temp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
     if (fd < 0) return;
     size_t done = 0;

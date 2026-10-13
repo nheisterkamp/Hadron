@@ -12,10 +12,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// The client maps Cloud's Windows path roots into the compat prefix only when
-// the tool's name contains "proton" so without a match every AutoCloud rule silently
-// skips the app.
-#define TOOL_DIR_NAME "notproton"
+// Every tool name starts with this. The client maps Cloud's Windows path roots into
+// the compat prefix only when the tool's name contains "proton", so without it every
+// AutoCloud rule silently skips the app, and the app names its tools hadron-proton-*.
+#define TOOL_DIR_NAME "hadron"
 #define TOOL_RUN      "/run"
 
 #define COMPAT_MANAGER_ENABLED_OFF  0x7B0
@@ -420,7 +420,7 @@ static void load_tool_list(void) {
     if (!home || tools_dir_path(tools_dir, sizeof(tools_dir)) != 0) return;
 
     char path[512];
-    snprintf(path, sizeof(path), "%s/Library/Application Support/notproton/tools", home);
+    snprintf(path, sizeof(path), "%s/Library/Application Support/hadron/tools", home);
     np_compat_load_tool_list(path, tools_dir);
 }
 
@@ -482,11 +482,11 @@ static int write_tool(const tool_entry_t *tool) {
     return 0;
 }
 
-#define RUN_SCRIPT_MARK "\n# notproton compatibility tool shim\n"
+#define RUN_SCRIPT_MARK "\n# hadron compatibility tool shim\n"
 
 // Older builds named their runtime in the marker, so any line of the form
-// "# notproton ... compatibility tool shim" is ours too.
-#define RUN_SCRIPT_MARK_HEAD "\n# notproton"
+// "# hadron ... compatibility tool shim" is ours too.
+#define RUN_SCRIPT_MARK_HEAD "\n# hadron"
 #define RUN_SCRIPT_MARK_TAIL " compatibility tool shim\n"
 
 static int has_run_mark(const char *head) {

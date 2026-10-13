@@ -32,7 +32,7 @@ MOLTENVK_VERSION=1.4.2
 MOLTENVK_SHA=f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
 
 # DXMT translates D3D10/11 to Metal. It is staged under lib/dxmt, not over Wine's own
-# d3d11 and dxgi, and the run script points NOTPROTON_DLL_OVERLAY (patch 0003) at it.
+# d3d11 and dxgi, and the run script points HADRON_DLL_OVERLAY (patch 0003) at it.
 DXMT_VERSION=0.80
 DXMT_SHA=8f260e36b5739e68f3bad613381441385c4dc7b85b78ba8de653d5a6a264529d
 
@@ -176,6 +176,6 @@ for arch in i386-windows x86_64-windows x86_64-unix; do
 done
 
 # The app identifies the runtime by this, see WineRuntime.swift.
-echo "wine-$WINE_VERSION" > "$OUT/notproton-runtime"
+echo "wine-$WINE_VERSION" > "$OUT/hadron-runtime"
 
 echo "==> done: $OUT"

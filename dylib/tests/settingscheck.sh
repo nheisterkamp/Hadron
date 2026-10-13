@@ -68,28 +68,28 @@ in_registry() {
 launch() {
 	new_case
 	in_registry 057e/2006 057e/2007 057e/2009
-	printf '%s\n' 057e/2006 057e/2007 057e/2009 > "$case_dir/notproton-hidden-controllers"
+	printf '%s\n' 057e/2006 057e/2007 057e/2009 > "$case_dir/hadron-hidden-controllers"
 	[ "$3" != unwritable ] || chmod 500 "$case_dir/pfx/drive_c"
 	run_in "$1" "$2"
 }
 run_in() {
-	env WINEPREFIX="$case_dir/pfx" WINELOADER="$work/wine" NOTPROTON_RETINA="$1" \
+	env WINEPREFIX="$case_dir/pfx" WINELOADER="$work/wine" HADRON_RETINA="$1" \
 		WINESERVER="$work/wineserver" STEAM_COMPAT_DATA_PATH="$case_dir" \
 		SDL_GAMECONTROLLER_IGNORE_DEVICES="${IGNORE-}" \
 		SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT="${EXCEPT-}" \
-		NOTPROTON_RAW_CONTROLLERS="${RAW-}" verb="${VERB-waitforexitandrun}" \
+		HADRON_RAW_CONTROLLERS="${RAW-}" verb="${VERB-waitforexitandrun}" \
 		FAKE_STATUS="$2" FAKE_CALLS="$case_dir/calls" FAKE_IMPORTED="$case_dir/imported" \
 		log="$case_dir/log" body="$body" \
 		sh -ec 'eval "$body"; import_prefix_settings; echo returned' \
 		> "$case_dir/out" 2>&1 || true
 	chmod 700 "$case_dir/pfx/drive_c"
 }
-calls() { sed 's/notproton-settings\.[A-Za-z0-9]*$/notproton-settings.X/' "$case_dir/calls"; }
-leftovers() { find "$case_dir/pfx/drive_c" -name 'notproton-settings.*' | wc -l | tr -d ' '; }
+calls() { sed 's/hadron-settings\.[A-Za-z0-9]*$/hadron-settings.X/' "$case_dir/calls"; }
+leftovers() { find "$case_dir/pfx/drive_c" -name 'hadron-settings.*' | wc -l | tr -d ' '; }
 
 echo "== one import per launch"
 launch "" 0
-is "Retina unset runs a single import and nothing else" 'reg import C:\notproton-settings.X' "$(calls)"
+is "Retina unset runs a single import and nothing else" 'reg import C:\hadron-settings.X' "$(calls)"
 same_file "Retina unset deletes RetinaMode" "$work/retina-off" "$case_dir/imported"
 is "the file is gone after the import" 0 "$(leftovers)"
 is "a clean import only logs the controller count" "controllers: 3 kept off hidraw" "$(cat "$case_dir/log")"
@@ -116,7 +116,7 @@ echo "== controllers on Steam's ignore list"
 again() { : > "$case_dir/calls"; : > "$case_dir/log"; rm -f "$case_dir/imported"; run_in "$1" "$2"; }
 hidden() { printf '%s\r\n' "[HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\WineBus\\Devices\\$1]" '"Hidraw"=dword:00000000' ''; }
 shown() { printf '%s\r\n' "[-HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\WineBus\\Devices\\$1]" ''; }
-owned() { tr '\n' ' ' < "$case_dir/notproton-hidden-controllers" | sed 's/ $//'; }
+owned() { tr '\n' ' ' < "$case_dir/hadron-hidden-controllers" | sed 's/ $//'; }
 
 new_case
 IGNORE='' EXCEPT='' RAW=''
@@ -129,7 +129,7 @@ IGNORE='0x054C/0x0CE6,0x054c/0x09cc,0x057e/0x2009,0x54c/0x5c4,junk,' EXCEPT='' R
 again "" 0
 { cat "$work/retina-off"; hidden 054c/09cc; hidden 054c/0ce6; hidden 057e/2006; hidden 057e/2007; hidden 057e/2009; } > "$work/expected"
 same_file "each listed controller gets Hidraw=0 in the same import" "$work/expected" "$case_dir/imported"
-is "new keys restart the prefix so winebus reads them" "reg import C:\\notproton-settings.X
+is "new keys restart the prefix so winebus reads them" "reg import C:\\hadron-settings.X
 wineserver -k
 wineserver -w" "$(calls)"
 is "malformed entries are skipped and the rest are tracked" "054c/09cc 054c/0ce6 057e/2006 057e/2007 057e/2009" "$(owned)"
@@ -145,15 +145,15 @@ is "a removed key restarts the prefix too" "wineserver -w" "$(calls | tail -1)"
 in_registry 054c/0ce6 057e/2006 057e/2007 057e/2009
 IGNORE='0x054c/0x0ce6' EXCEPT='' RAW=''
 again "" 0
-is "an unchanged list does not restart the prefix" "reg import C:\\notproton-settings.X" "$(calls)"
+is "an unchanged list does not restart the prefix" "reg import C:\\hadron-settings.X" "$(calls)"
 
 in_registry 054c/0ce6 057e/2006 057e/2007 057e/2009
 IGNORE='0x054c/0x0ce6' EXCEPT='' RAW='1'
 again "" 0
 { cat "$work/retina-off"; shown 054c/0ce6; shown 057e/2006; shown 057e/2007; shown 057e/2009; } > "$work/expected"
-same_file "NOTPROTON_RAW_CONTROLLERS=1 removes every key NotProton wrote" "$work/expected" "$case_dir/imported"
-is "NOTPROTON_RAW_CONTROLLERS=1 tracks nothing" "" "$(owned)"
-is "NOTPROTON_RAW_CONTROLLERS=1 is logged" "controllers: games read them directly (NOTPROTON_RAW_CONTROLLERS=1)" "$(cat "$case_dir/log")"
+same_file "HADRON_RAW_CONTROLLERS=1 removes every key Hadron wrote" "$work/expected" "$case_dir/imported"
+is "HADRON_RAW_CONTROLLERS=1 tracks nothing" "" "$(owned)"
+is "HADRON_RAW_CONTROLLERS=1 is logged" "controllers: games read them directly (HADRON_RAW_CONTROLLERS=1)" "$(cat "$case_dir/log")"
 
 new_case
 in_registry 28de/1304 057e/2009
@@ -166,7 +166,7 @@ in_registry 28de/1304 054c/0ce6 057e/2006 057e/2007 057e/2009
 IGNORE='0x28de/0x1304,0x054c/0x0ce6' EXCEPT='' RAW='1'
 again "" 0
 { cat "$work/retina-off"; shown 054c/0ce6; shown 057e/2006; shown 057e/2007; } > "$work/expected"
-same_file "NOTPROTON_RAW_CONTROLLERS=1 keeps a key the user wrote" "$work/expected" "$case_dir/imported"
+same_file "HADRON_RAW_CONTROLLERS=1 keeps a key the user wrote" "$work/expected" "$case_dir/imported"
 
 new_case
 IGNORE='0x054c/0x09cc,0x054c/0x0ce6,0x057e/0x2009' EXCEPT='0x054C/0x0CE6,0x057e/0x2009' RAW=''
@@ -187,18 +187,18 @@ same_file "so the next launch can remove it once it leaves the list" "$work/expe
 echo "== helper launches"
 new_case
 in_registry 054c/0ce6 057e/2006 057e/2007 057e/2009
-printf '%s\n' 054c/0ce6 057e/2006 057e/2007 057e/2009 > "$case_dir/notproton-hidden-controllers"
+printf '%s\n' 054c/0ce6 057e/2006 057e/2007 057e/2009 > "$case_dir/hadron-hidden-controllers"
 IGNORE='' EXCEPT='' RAW='' VERB=run
 again "" 0
 same_file "a helper with no list keeps the hidden controllers" "$work/retina-off" "$case_dir/imported"
-is "a helper does not restart the prefix" "reg import C:\\notproton-settings.X" "$(calls)"
+is "a helper does not restart the prefix" "reg import C:\\hadron-settings.X" "$(calls)"
 is "a helper keeps them tracked" "054c/0ce6 057e/2006 057e/2007 057e/2009" "$(owned)"
 IGNORE='' EXCEPT='' RAW='1' VERB=run
 again "" 0
 { cat "$work/retina-off"; shown 054c/0ce6; shown 057e/2006; shown 057e/2007; shown 057e/2009; } > "$work/expected"
-same_file "NOTPROTON_RAW_CONTROLLERS=1 still clears them in a helper" "$work/expected" "$case_dir/imported"
+same_file "HADRON_RAW_CONTROLLERS=1 still clears them in a helper" "$work/expected" "$case_dir/imported"
 in_registry 054c/0ce6 057e/2006 057e/2007 057e/2009
-printf '%s\n' 054c/0ce6 057e/2006 057e/2007 057e/2009 > "$case_dir/notproton-hidden-controllers"
+printf '%s\n' 054c/0ce6 057e/2006 057e/2007 057e/2009 > "$case_dir/hadron-hidden-controllers"
 IGNORE='' EXCEPT='' RAW='' VERB=waitforexitandrun
 again "" 0
 { cat "$work/retina-off"; shown 054c/0ce6; } > "$work/expected"
@@ -206,8 +206,8 @@ same_file "a game with no list still drops them" "$work/expected" "$case_dir/imp
 unset VERB
 
 in_registry
-rm -f "$case_dir/notproton-hidden-controllers"
-ln -s /dev/null "$case_dir/notproton-hidden-controllers"
+rm -f "$case_dir/hadron-hidden-controllers"
+ln -s /dev/null "$case_dir/hadron-hidden-controllers"
 IGNORE='0x054c/0x0ce6' EXCEPT='' RAW=''
 again "" 0
 same_file "a linked tracking file writes no controller keys" "$work/retina-off" "$case_dir/imported"

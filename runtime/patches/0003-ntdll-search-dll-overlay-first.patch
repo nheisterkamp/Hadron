@@ -6,9 +6,9 @@ index 2b6dbf2..b3cbb2e 100644
  static void set_dll_path(void)
  {
      char *p, *path = getenv( "WINEDLLPATH" );
-+    /* NotProton: searched ahead of the builtin dir, so a graphics layer such as DXMT
++    /* Hadron: searched ahead of the builtin dir, so a graphics layer such as DXMT
 +     * can stand in for the builtin d3d11 and dxgi of a single game. */
-+    char *overlay = getenv( "NOTPROTON_DLL_OVERLAY" );
++    char *overlay = getenv( "HADRON_DLL_OVERLAY" );
      int i, count = 0;
  
 +    if (overlay && !*overlay) overlay = NULL;

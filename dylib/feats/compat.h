@@ -1,6 +1,6 @@
 // Compatibility tool support
-#ifndef NOTPROTON_FEATS_COMPAT_H
-#define NOTPROTON_FEATS_COMPAT_H
+#ifndef HADRON_FEATS_COMPAT_H
+#define HADRON_FEATS_COMPAT_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -125,13 +125,13 @@ uint32_t np_compat_manager_tools_max(void);
 // Absolute path to the directory of the first tool in the app's list, or NULL.
 const char *np_compat_tool_dir(void);
 
-// True when the launch command runs a NotProton compatibility tool.
+// True when the launch command runs a Hadron compatibility tool.
 int np_compat_runs_tool(const char *cmd);
 
-// True when the app is set to run with a NotProton compatibility tool.
+// True when the app is set to run with a Hadron compatibility tool.
 int np_compat_app_runs_tool(uint32_t appid);
 
 // Command line template for the tool's toolmanifest.vdf commandline value.
 const char *np_compat_tool_commandline(void);
 
-#endif // NOTPROTON_FEATS_COMPAT_H
+#endif // HADRON_FEATS_COMPAT_H

@@ -61,7 +61,7 @@ esac
 WINE_SRC_REL=${WINE_SRC_REL:-../wine}
 # The complete tree, unlike $here, which holds only the authored files.
 TREE=${TREE:-$repo/build/lsteamclient}
-BRIDGE_DIR=${BRIDGE_DIR:-$HOME/Library/Application Support/notproton/bridge}
+BRIDGE_DIR=${BRIDGE_DIR:-$HOME/Library/Application Support/hadron/bridge}
 
 install=0
 do_pe=1

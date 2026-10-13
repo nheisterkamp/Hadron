@@ -1,5 +1,5 @@
 #!/bin/sh
-# notproton compatibility tool shim
+# hadron compatibility tool shim
 set -e
 
 verb="$1"
@@ -17,7 +17,7 @@ case "$verb" in
     ;;
 esac
 
-np_support="$HOME/Library/Application Support/notproton"
+np_support="$HOME/Library/Application Support/hadron"
 iconmaker="$np_support/iconmaker"
 
 find_client_root() {
@@ -101,13 +101,13 @@ resolve_icon() {
   fi
   icon_cache="$icon_root/game.icns"
   icon_status=1
-  if [ -n "$art" ] && [ -s "$icon_cache" ] &&   [ "$(cat "$icon_root/notproton-icon.source" 2>/dev/null)" =   "$icon_source" ]; then
+  if [ -n "$art" ] && [ -s "$icon_cache" ] &&   [ "$(cat "$icon_root/hadron-icon.source" 2>/dev/null)" =   "$icon_source" ]; then
     icon_status=0
     echo "icon reused from $art" >> "$log" 2>&1 || true
   elif [ -n "$art" ] && [ -x "$iconmaker" ]; then
     if "$iconmaker" "$art" "$icon_cache" >> "$log" 2>&1; then
       icon_status=0
-      printf '%s\n' "$icon_source" > "$icon_root/notproton-icon.source"
+      printf '%s\n' "$icon_source" > "$icon_root/hadron-icon.source"
       echo "icon built from $art" >> "$log" 2>&1 || true
     elif [ "$art" = "$ico" ]; then
       # A cached .ico that iconmaker rejects is corrupt and passes the size
@@ -165,14 +165,14 @@ export WINEDLLPATH="$np_root/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$
 export PATH="$np_root/bin:$PATH"
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
-  log="$STEAM_COMPAT_DATA_PATH/notproton-run.log"
+  log="$STEAM_COMPAT_DATA_PATH/hadron-run.log"
 else
   log=/dev/null
 fi
 [ "$(stat -f %z "$log" 2>/dev/null || echo 0)" -gt 262144 ] \
   && : > "$log" || true
 {
-  echo "=== notproton run $(date) ==="
+  echo "=== hadron run $(date) ==="
   echo "verb=$verb"
   echo "args:"; for a in "$@"; do printf '  [%s]\n' "$a"; done
   echo "cwd=$(pwd)"
@@ -287,7 +287,7 @@ last_wine_build() {
 }
 
 refuse_other_build() {
-  record="$STEAM_COMPAT_DATA_PATH/notproton-build"
+  record="$STEAM_COMPAT_DATA_PATH/hadron-build"
   had_build=""
   had_display=""
   if [ -r "$record" ]; then
@@ -307,9 +307,9 @@ refuse_other_build() {
 }
 
 claim_prefix() {
-  [ -r "$STEAM_COMPAT_DATA_PATH/notproton-build" ] \
+  [ -r "$STEAM_COMPAT_DATA_PATH/hadron-build" ] \
     || echo "=== prefix claimed by build $np_build ===" >> "$log" 2>&1 || true
-  printf '%s\n%s\n' "$np_build" "$np_display" > "$STEAM_COMPAT_DATA_PATH/notproton-build" 2>/dev/null \
+  printf '%s\n%s\n' "$np_build" "$np_display" > "$STEAM_COMPAT_DATA_PATH/hadron-build" 2>/dev/null \
     || echo "=== could not record build $np_build in the prefix ===" >> "$log" 2>&1 || true
 }
 # Steam cloud related
@@ -499,7 +499,7 @@ write_owned_controllers() {
 # so Hidraw=0 hides those too. The Switch controllers get Hidraw=0 even when Steam Input
 # is off, to avoid silently breaking controller support in most games.
 plan_hidden_controllers() {
-  controllers_file="$STEAM_COMPAT_DATA_PATH/notproton-hidden-controllers"
+  controllers_file="$STEAM_COMPAT_DATA_PATH/hadron-hidden-controllers"
   controllers_add=""
   controllers_remove=""
   controllers_wanted=""
@@ -510,7 +510,7 @@ plan_hidden_controllers() {
   [ ! -f "$WINEPREFIX/system.reg" ] || in_registry=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
     | sed -n 's/^\[system\\\\controlset001\\\\services\\\\winebus\\\\devices\\\\\([0-9a-f]\{4\}\/[0-9a-f]\{4\}\)\].*/\1/p' \
     | sort -u)
-  if [ "$NOTPROTON_RAW_CONTROLLERS" != "1" ]; then
+  if [ "$HADRON_RAW_CONTROLLERS" != "1" ]; then
     controllers_wanted=$(ids_without "$(controller_ids "$SDL_GAMECONTROLLER_IGNORE_DEVICES")" \
       "$(controller_ids "$SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT")")
     controllers_wanted=$(printf '%s\n' "$controllers_wanted" 057e/2006 057e/2007 057e/2009 | sed '/^$/d' | sort -u)
@@ -527,7 +527,7 @@ $controllers_wanted"
 }
 
 import_prefix_settings() {
-  if [ "$NOTPROTON_RETINA" = "1" ]; then
+  if [ "$HADRON_RETINA" = "1" ]; then
     retina_line='"RetinaMode"="y"'
   else
     retina_line='"RetinaMode"=-'
@@ -540,7 +540,7 @@ import_prefix_settings() {
     controllers_remove=""
     echo "=== could not track the hidden controllers, leaving them as they are ===" >> "$log" 2>&1 || true
   fi
-  settings_file=$(mktemp "$WINEPREFIX/drive_c/notproton-settings.XXXXXX" 2>/dev/null) \
+  settings_file=$(mktemp "$WINEPREFIX/drive_c/hadron-settings.XXXXXX" 2>/dev/null) \
     || settings_file=""
   if [ -z "$settings_file" ] || ! { printf '%s\r\n' \
       'Windows Registry Editor Version 5.00' '' \
@@ -569,8 +569,8 @@ import_prefix_settings() {
       without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
       without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
     fi
-    if [ "$NOTPROTON_RAW_CONTROLLERS" = "1" ]; then
-      echo "controllers: games read them directly (NOTPROTON_RAW_CONTROLLERS=1)" >> "$log" 2>&1 || true
+    if [ "$HADRON_RAW_CONTROLLERS" = "1" ]; then
+      echo "controllers: games read them directly (HADRON_RAW_CONTROLLERS=1)" >> "$log" 2>&1 || true
     elif [ -n "$controllers_wanted" ]; then
       echo "controllers: $(printf '%s\n' "$controllers_wanted" | grep -c .) kept off hidraw" \
         >> "$log" 2>&1 || true
@@ -589,14 +589,14 @@ fi
 echo "runner: build $np_build ($np_display) at $np_root" >> "$log" 2>&1 || true
 
 # The runtime carries DXMT beside Wine's own d3d11 and dxgi, and its Wine searches
-# NOTPROTON_DLL_OVERLAY first. NOTPROTON_GRAPHICS=wined3d in a game's launch options
+# HADRON_DLL_OVERLAY first. HADRON_GRAPHICS=wined3d in a game's launch options
 # leaves that game on Wine's own.
-unset NOTPROTON_DLL_OVERLAY
-np_graphics="${NOTPROTON_GRAPHICS:-dxmt}"
+unset HADRON_DLL_OVERLAY
+np_graphics="${HADRON_GRAPHICS:-dxmt}"
 if [ "$np_graphics" = dxmt ] && [ -d "$np_root/lib/dxmt" ]; then
-  export NOTPROTON_DLL_OVERLAY="$np_root/lib/dxmt"
+  export HADRON_DLL_OVERLAY="$np_root/lib/dxmt"
 fi
-echo "graphics: $np_graphics (${NOTPROTON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
+echo "graphics: $np_graphics (${HADRON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
 
 # Each runtime build needs its own template.
 runner_id=""
@@ -830,8 +830,8 @@ seed_prefix_from_template() {
   fi
   # Since a user can have more than one Steam library and libraries can be on different drives,
   # the template is stored alongside the Steam library to support APFS cloning.
-  template_cache="$(dirname "$STEAM_COMPAT_DATA_PATH")/notproton-template"
-  template_lock="$(dirname "$STEAM_COMPAT_DATA_PATH")/.notproton-template.lock"
+  template_cache="$(dirname "$STEAM_COMPAT_DATA_PATH")/hadron-template"
+  template_lock="$(dirname "$STEAM_COMPAT_DATA_PATH")/.hadron-template.lock"
   [ ! -L "$template_cache" ] && [ ! -L "$template_lock" ] || return 0
   [ ! -e "$template_lock" ] || [ -f "$template_lock" ] || return 0
   if ! { : >> "$template_lock"; } 2>/dev/null; then
@@ -882,7 +882,7 @@ seed_prefix_from_template() {
 
 prepare_prefix_directory() {
   mkdir -p "$STEAM_COMPAT_DATA_PATH" || return 1
-  prefix_lock="$STEAM_COMPAT_DATA_PATH/.notproton-prefix.lock"
+  prefix_lock="$STEAM_COMPAT_DATA_PATH/.hadron-prefix.lock"
   [ ! -L "$prefix_lock" ] && { [ ! -e "$prefix_lock" ] || [ -f "$prefix_lock" ]; } || return 1
   exec 8>> "$prefix_lock"
   if ! /usr/bin/lockf -s -t 0 8; then
@@ -893,19 +893,19 @@ prepare_prefix_directory() {
   for interrupted in "$STEAM_COMPAT_DATA_PATH"/pfx.replaced.*; do
     [ -e "$interrupted" ] || [ -L "$interrupted" ] || continue
     echo "=== interrupted prefix replacement needs recovery: $interrupted ===" >> "$log" 2>&1 || true
-    show_alert "Prefix recovery required" "An interrupted prefix replacement may hold saved games. Do not delete this prefix. Check its notproton-run.log for the recovery folder."
+    show_alert "Prefix recovery required" "An interrupted prefix replacement may hold saved games. Do not delete this prefix. Check its hadron-run.log for the recovery folder."
     exit 1
   done
   mkdir -p "$WINEPREFIX"
 }
 
 game_drive_record() {
-  record="$STEAM_COMPAT_DATA_PATH/notproton-game-drive"
+  record="$STEAM_COMPAT_DATA_PATH/hadron-game-drive"
   [ -f "$record" ] && [ ! -L "$record" ] && cat "$record" 2>/dev/null
 }
 
 record_game_drive() {
-  record="$STEAM_COMPAT_DATA_PATH/notproton-game-drive"
+  record="$STEAM_COMPAT_DATA_PATH/hadron-game-drive"
   [ "$(game_drive_record)" != "$1" ] && [ ! -L "$record" ] || return 0
   { printf '%s\n' "$1" > "$record.new" && mv -f "$record.new" "$record"; } 2>/dev/null \
     || rm -f "$record.new" 2>/dev/null || true
@@ -920,7 +920,7 @@ restart_for_drive() {
 unmap_game_drive() {
   [ -L "$drive" ] && [ "$(readlink "$drive")" = "$(game_drive_record)" ] || return 0
   rm -f "$drive" || return 0
-  rm -f "$STEAM_COMPAT_DATA_PATH/notproton-game-drive" 2>/dev/null || true
+  rm -f "$STEAM_COMPAT_DATA_PATH/hadron-game-drive" 2>/dev/null || true
   echo "=== removed drive S:, the game is not in a Steam library ===" >> "$log" 2>&1 || true
   restart_for_drive
 }
@@ -1014,10 +1014,10 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   seed_prefix_from_template
   stage_step="profile layout"
   if ! lay_out_proton_profile; then
-    show_alert "Saved-game folders need attention" "Hadron left the conflicting files in place. Open this prefix's notproton-run.log for details before trying again."
+    show_alert "Saved-game folders need attention" "Hadron left the conflicting files in place. Open this prefix's hadron-run.log for details before trying again."
     exit 1
   fi
-  echo "video: RetinaMode=${NOTPROTON_RETINA:-0}" >> "$log" 2>&1 || true
+  echo "video: RetinaMode=${HADRON_RETINA:-0}" >> "$log" 2>&1 || true
   stage_step="game drive"
   map_game_drive
   stage_step="prefix settings"
@@ -1132,7 +1132,7 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   bridge_cache=""
   if [ -n "$STEAM_COMPAT_DATA_PATH" ] && ! same_volume "$bridge_src" "$STEAM_COMPAT_DATA_PATH" \
     && volume_clones "$STEAM_COMPAT_DATA_PATH"; then
-    bridge_cache="$(dirname "$STEAM_COMPAT_DATA_PATH")/notproton-template/bridge"
+    bridge_cache="$(dirname "$STEAM_COMPAT_DATA_PATH")/hadron-template/bridge"
   fi
   bridge_matches=1
   for f in $bridge_files; do
@@ -1166,7 +1166,7 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
       fi
     done
     if [ "$unstaged" -eq 1 ]; then
-      show_alert "Steam files could not be copied" "Hadron could not copy a file into this game's prefix. Open this prefix's notproton-run.log for details."
+      show_alert "Steam files could not be copied" "Hadron could not copy a file into this game's prefix. Open this prefix's hadron-run.log for details."
       exit 1
     fi
   fi
@@ -1179,7 +1179,7 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   done
   verify_runner
   if ! install_lsteamclient_trigger; then
-    show_alert "Steam files could not be copied" "Hadron could not copy a file into this game's prefix. Open this prefix's notproton-run.log for details."
+    show_alert "Steam files could not be copied" "Hadron could not copy a file into this game's prefix. Open this prefix's hadron-run.log for details."
     exit 1
   fi
   install_legacy_steam_dll
@@ -1249,7 +1249,7 @@ bundle_name=$(printf '%s' "$game_name" | tr -d '/:"`$\\')
 bundle_name=${bundle_name#"${bundle_name%%[!.]*}"}
 [ -n "$bundle_name" ] || bundle_name="Steam Game"
 game_name_xml=$(printf '%s' "$game_name" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
-loader_root="$HOME/Library/Application Support/notproton/launchers/$app_id"
+loader_root="$HOME/Library/Application Support/hadron/launchers/$app_id"
 mkdir -p "$loader_root"
 loader_app="$loader_root/$bundle_name.app"
 find "$loader_root" -maxdepth 1 -name '.build.*' -mmin +60 -exec rm -rf {} + 2>/dev/null || true
@@ -1268,9 +1268,9 @@ fi
 [ -n "$icon_arg" ] || echo "no icon resolved, launching without one" >> "$log" 2>&1 || true
 
 uielement_arg=""
-if [ "${NOTPROTON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
+if [ "${HADRON_HIDE_LAUNCHER_TILE:-0}" = "1" ]; then
   uielement_arg="  <key>LSUIElement</key><true/>"
-  echo "launcher tile hidden by NOTPROTON_HIDE_LAUNCHER_TILE" >> "$log" 2>&1 || true
+  echo "launcher tile hidden by HADRON_HIDE_LAUNCHER_TILE" >> "$log" 2>&1 || true
 fi
 cat > "$loader_contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1279,7 +1279,7 @@ cat > "$loader_contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleName</key><string>$game_name_xml</string>
   <key>CFBundleDisplayName</key><string>$game_name_xml</string>
-  <key>CFBundleIdentifier</key><string>com.notproton.launcher.$app_id</string>
+  <key>CFBundleIdentifier</key><string>nl.nhsd.hadron.launcher.$app_id</string>
   <key>CFBundleExecutable</key><string>launcher</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -1315,18 +1315,18 @@ fi
 cat > "$loader_macos/launcher" <<LAUNCHER
 #!/bin/sh
 export WINELOADER="$WINELOADER"
-wine_log="$loader_root/notproton-wine.log"
+wine_log="$loader_root/hadron-wine.log"
 exec > "\$wine_log" 2>&1
-shim="$HOME/Library/Application Support/notproton/overlay-shim.dylib"
+shim="$HOME/Library/Application Support/hadron/overlay-shim.dylib"
 if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
   if [ -f "\$shim" ]; then
     export DYLD_INSERT_LIBRARIES="\$shim:\$STEAM_DYLD_INSERT_LIBRARIES"
-    export NOTPROTON_OVERLAY_SHIM="\$shim"
+    export HADRON_OVERLAY_SHIM="\$shim"
   else
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
 fi
-[ -n "\$NOTPROTON_GAME_CWD" ] && cd "\$NOTPROTON_GAME_CWD"
+[ -n "\$HADRON_GAME_CWD" ] && cd "\$HADRON_GAME_CWD"
 "$WINELOADER" "\$@"
 exit \$?
 LAUNCHER
@@ -1465,7 +1465,7 @@ set -- \
   --env WINESERVER="$WINESERVER" \
   --env WINEDLLPATH="$WINEDLLPATH" \
   --env WINEDLLOVERRIDES="$WINEDLLOVERRIDES" \
-  --env NOTPROTON_DLL_OVERLAY="${NOTPROTON_DLL_OVERLAY:-}" \
+  --env HADRON_DLL_OVERLAY="${HADRON_DLL_OVERLAY:-}" \
   --env WINEPREFIX="$WINEPREFIX" \
   --env WINEDEBUG="$WINEDEBUG" \
   --env PATH="$PATH" \
@@ -1474,7 +1474,7 @@ set -- \
   --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
   --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
   --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
-  --env NOTPROTON_GAME_CWD="$game_cwd" "$@"
+  --env HADRON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
 [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true

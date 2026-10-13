@@ -1,7 +1,7 @@
 // Build version string
-#ifndef NOTPROTON_VERSION_H
-#define NOTPROTON_VERSION_H
+#ifndef HADRON_VERSION_H
+#define HADRON_VERSION_H
 
-#define NOTPROTON_VERSION "1.1.7"
+#define HADRON_VERSION "1.1.7"
 
-#endif // NOTPROTON_VERSION_H
+#endif // HADRON_VERSION_H

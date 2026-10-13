@@ -6,7 +6,7 @@ index 2b6dbf2..d6ef11f 100644
      }
      if ((p = strrchr( name, '/' ))) name = p + 1;
      if ((p = strrchr( name, '\\' ))) name = p + 1;
-+    /* NotProton: same profile name as Proton, which Steam Cloud paths expect. */
++    /* Hadron: same profile name as Proton, which Steam Cloud paths expect. */
 +    name = "steamuser";
      home_dir = strdup( home );
      user_name = strdup( name );

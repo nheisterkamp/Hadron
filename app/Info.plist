@@ -10,11 +10,11 @@
 		<string>zh-Hans</string>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>NotProtonApp</string>
+	<string>HadronApp</string>
 	<key>CFBundleIconFile</key>
-	<string>NotProton</string>
+	<string>Hadron</string>
 	<key>CFBundleIconName</key>
-	<string>NotProton</string>
+	<string>Hadron</string>
 	<key>CFBundleIdentifier</key>
 	<string>nl.nhsd.hadron</string>
 	<key>CFBundleInfoDictionaryVersion</key>

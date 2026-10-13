@@ -27,7 +27,7 @@ const FORMS = {
 
 // `fallback` stands in for what the hook sets before the transform.
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
-               { fallback = 'notproton' } = {}) {
+               { fallback = 'hadron' } = {}) {
   const raw = execFileSync(emit, [form, fallback], { encoding: 'utf8' }).trim();
   const src = form === 'component'
     ? 'var ' + raw.replace(/,$/, '')
@@ -56,7 +56,7 @@ function details(launchOptions, over) {
   return Object.assign({
     unAppID: 287700,
     vecPlatforms: ['windows'],
-    strCompatToolName: 'notproton',
+    strCompatToolName: 'hadron',
     strLaunchOptions: launchOptions,
   }, over || {});
 }

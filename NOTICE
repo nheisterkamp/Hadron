@@ -1,7 +1,8 @@
-NotProton licensing
-===================
+Hadron licensing
+================
 
-NotProton has a complex licensing situation. The bulk of the project is licensed
+Hadron is a fork of NotProton (https://github.com/NotProtonNot/NotProton) and carries
+its licenses. It has a complex licensing situation. The bulk of the project is licensed
 under GPLV3.
 
 The parts that are modifications of Valve code are licensed under the license

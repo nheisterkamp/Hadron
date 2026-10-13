@@ -6,7 +6,7 @@ index d8b7a92..16818fc 100644
  }
  
  
-+/* NotProton: the Windows steamclient that games load cannot talk to macOS Steam.
++/* Hadron: the Windows steamclient that games load cannot talk to macOS Steam.
 + * Its exports are pointed at lsteamclient, which can. */
 +
 +#if defined(__x86_64__) || defined(__i386__)

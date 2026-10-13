@@ -1,9 +1,9 @@
-# Contributing to NotProton
+# Contributing to Hadron
 
-Thank you for considering contributing code to NotProton. NotProton is a large undertaking. I'm happy to do it. Contributions can reduce the load and can make it easier to figure out what people want.
+Thank you for considering contributing code to Hadron. Hadron is a large undertaking. I'm happy to do it. Contributions can reduce the load and can make it easier to figure out what people want.
 
-The NotProton contribution policy is fairly straightforward. It's primarily about being thoughtful with how you use development tools,
-not biting off more than *you* think you can chew, thinking carefully before and while you touch complex parts of NotProton and working together to make things better.
+The Hadron contribution policy is fairly straightforward. It's primarily about being thoughtful with how you use development tools,
+not biting off more than *you* think you can chew, thinking carefully before and while you touch complex parts of Hadron and working together to make things better.
 
 This policy is not a 'hard' policy. As in, I will review whatever is submitted regardless. I am not going to yell at someone for not following my precious requests. These are nice to haves, but they are not a true must, since I can always improve things regardless. I'm not a monster. I'm friendly, I swear. 
 
@@ -29,7 +29,7 @@ I review PRs for code quality, for correctness, for unintended issues. For every
 
 By all means, work on anything you want. Do ask yourself if you are ready to work on a complex part of the project, though. Did you consider the different ways that your change interacts with other components? Did you consider multiple Steam accounts, multiple libraries, multiple macOS users, different file systems? These are things that matter. If you have thought the entire thing through, that's great. That helps a lot.
 
-7. When PRs that touch complex parts of the app come in, I review them *heavily*. I may rewrite parts of them. I may rewrite them heavily. But that does *not* mean I don't value the PRs and the author of them! I value them deeply. I want to make NotProton better and improve the quality of the macOS gaming experience. My policy (in scenarios where I make substantial changes to a PR) is to assign authorship to the original PR author. 
+7. When PRs that touch complex parts of the app come in, I review them *heavily*. I may rewrite parts of them. I may rewrite them heavily. But that does *not* mean I don't value the PRs and the author of them! I value them deeply. I want to make Hadron better and improve the quality of the macOS gaming experience. My policy (in scenarios where I make substantial changes to a PR) is to assign authorship to the original PR author. 
 
 I apply a much more critical eye the first few PRs from a person than I do to later ones. I always test and validate, but if you have contributed to this project successfully before, don't expect a long delay on a PR being merged.
 

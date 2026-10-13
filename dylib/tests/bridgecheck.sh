@@ -118,7 +118,7 @@ printf 'bridge steam.exe\n' > "$work/bridge/steam.exe"
 echo "== a prefix on the same drive clones from the bridge itself"
 rm -rf "$prefix"
 compat="$work/library/compatdata/1"
-cache="$work/library/compatdata/notproton-template/bridge"
+cache="$work/library/compatdata/hadron-template/bridge"
 stage
 is "every file is copied" 6 "$(staged)"
 is "no copy of the bridge is made" no "$([ -e "$cache" ] && echo yes || echo no)"

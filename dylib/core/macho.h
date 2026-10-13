@@ -1,5 +1,5 @@
-#ifndef NOTPROTON_CORE_MACHO_H
-#define NOTPROTON_CORE_MACHO_H
+#ifndef HADRON_CORE_MACHO_H
+#define HADRON_CORE_MACHO_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -35,4 +35,4 @@ uintptr_t np_import_stub_for_symbol(const struct mach_header_64 *mh, intptr_t sl
 int np_rebind_import(const struct mach_header_64 *mh, intptr_t slide,
                      const char *symbol, void *replacement);
 
-#endif // NOTPROTON_CORE_MACHO_H
+#endif // HADRON_CORE_MACHO_H

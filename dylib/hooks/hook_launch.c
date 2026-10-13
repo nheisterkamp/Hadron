@@ -143,8 +143,8 @@ np_patch_entry_t *np_hooks_launch_defs(void) {
 }
 
 void np_hooks_launch_install(const struct mach_header_64 *mh, intptr_t slide) {
-    if (np_hooks_env_lists_label("NOTPROTON_DISABLE", "launch")) {
-        NP_WARN("[launch] DISABLED via NOTPROTON_DISABLE, launches keep running "
+    if (np_hooks_env_lists_label("HADRON_DISABLE", "launch")) {
+        NP_WARN("[launch] DISABLED via HADRON_DISABLE, launches keep running "
                 "without a shell");
         return;
     }

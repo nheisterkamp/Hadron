@@ -27,16 +27,16 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the graphics dropdown carries no label column');
   t.ok(r.find(x => x.type === 'Dropdown').props.selectedOption === 'dxmt', 'nothing set reads as DXMT');
 
-  for (const o of ['', 'NOTPROTON_GRAPHICS=dxmt', 'NOTPROTON_GRAPHICS=']) {
+  for (const o of ['', 'HADRON_GRAPHICS=dxmt', 'HADRON_GRAPHICS=']) {
     r = nodes(o);
     t.ok(toggles(r).filter(l => l === 'DLSS').length === 1 && sections(r).includes('MetalFX'),
          `${JSON.stringify(o)} keeps DLSS and MetalFX`);
   }
-  r = nodes('NOTPROTON_GRAPHICS=wined3d');
+  r = nodes('HADRON_GRAPHICS=wined3d');
   t.ok(!toggles(r).includes('DLSS') && !sections(r).includes('MetalFX') && toggles(r).length === 4,
        'wined3d hides DLSS and MetalFX, keeps the rest');
   // The run script overlays DXMT only for dxmt, so anything else is not DXMT either.
-  r = nodes('NOTPROTON_GRAPHICS=other');
+  r = nodes('HADRON_GRAPHICS=other');
   t.ok(!toggles(r).includes('DLSS') && !sections(r).includes('MetalFX'),
        'an unknown value does not show the DXMT rows');
   t.ok(r.find(x => x.type === 'Dropdown').props.selectedOption === 'other',
@@ -48,13 +48,13 @@ for (const form of Object.keys(FORMS)) {
   t.ok(nodes('DXMT_ENABLE_NVEXT=1').find(x => x.props.label === 'DLSS').props.checked === true,
        'the DLSS toggle reads as on from its argument');
 
-  t.ok(nodes('NOTPROTON_GRAPHICS=wined3d').find(x => x.type === 'Dropdown').props.selectedOption === 'wined3d',
+  t.ok(nodes('HADRON_GRAPHICS=wined3d').find(x => x.type === 'Dropdown').props.selectedOption === 'wined3d',
        'the graphics dropdown reflects the current value');
   written.length = 0;
   nodes('').find(x => x.type === 'Dropdown').props.onChange({ data: 'wined3d' });
-  t.ok(last().trim() === 'NOTPROTON_GRAPHICS=wined3d %command%', `picking WineD3D writes it (${last()})`);
+  t.ok(last().trim() === 'HADRON_GRAPHICS=wined3d %command%', `picking WineD3D writes it (${last()})`);
   written.length = 0;
-  nodes('NOTPROTON_GRAPHICS=wined3d').find(x => x.type === 'Dropdown').props.onChange({ data: 'dxmt' });
+  nodes('HADRON_GRAPHICS=wined3d').find(x => x.type === 'Dropdown').props.onChange({ data: 'dxmt' });
   t.ok(last() === '', `picking DXMT clears the variable, it is the default (${last()})`);
 
   t.ok(nodes('MTL_HUD_ENABLED=1').find(x => x.props.label === 'Metal HUD').props.checked === true,
@@ -73,7 +73,7 @@ for (const form of Object.keys(FORMS)) {
     .props.rgOptions.map(o => o.label);
   t.ok(factors.join(',') === 'Off,1.5x,1.72x,2x,3x', `the factors name themselves (${factors.join(',')})`);
 
-  // The value is what the run script reads from NOTPROTON_GRAPHICS.
+  // The value is what the run script reads from HADRON_GRAPHICS.
   const choices = nodes('').find(x => x.type === 'Dropdown').props.rgOptions;
   t.ok(choices.map(o => o.label).join(',') === "DXMT,WineD3D (Wine's own Direct3D)",
        `the choices name themselves (${choices.map(o => o.label).join(',')})`);
@@ -90,10 +90,10 @@ for (const form of Object.keys(FORMS)) {
        'the controller section warns what the row changes');
   written.length = 0;
   raw('').props.onChange(true);
-  t.ok(last().trim() === 'NOTPROTON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);
-  t.ok(raw('NOTPROTON_RAW_CONTROLLERS=1').props.checked === true, 'the controller row reads its flag');
+  t.ok(last().trim() === 'HADRON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);
+  t.ok(raw('HADRON_RAW_CONTROLLERS=1').props.checked === true, 'the controller row reads its flag');
   written.length = 0;
-  raw('NOTPROTON_RAW_CONTROLLERS=1 WINEDEBUG=-all').props.onChange(false);
+  raw('HADRON_RAW_CONTROLLERS=1 WINEDEBUG=-all').props.onChange(false);
   t.ok(last().trim() === 'WINEDEBUG=-all %command%', `turning the controller row off removes its flag (${last()})`);
   const css = nodes('').filter(x => x.type === 'style');
   t.ok(css.length === 1 && css[0].props.children.includes('.NPHadronPanel .NPHadronRow{'),

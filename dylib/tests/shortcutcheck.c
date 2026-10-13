@@ -283,7 +283,7 @@ static void icon_checks(void) {
     DIR *dir = opendir(resources.s);
     int entries = 0;
     for (struct dirent *e; dir && (e = readdir(dir));)
-        if (e->d_name[0] != '.' || strncmp(e->d_name, ".notproton-icon-", 16) == 0) entries++;
+        if (e->d_name[0] != '.' || strncmp(e->d_name, ".hadron-icon-", 16) == 0) entries++;
     if (dir) closedir(dir);
     check(entries == 1, "no temporary icon files left behind");
     update(home.s, source.s);

@@ -1,6 +1,6 @@
 // Hook definitions, Dobby installation, and shared hook infrastructure.
-#ifndef NOTPROTON_HOOKS_HOOKS_H
-#define NOTPROTON_HOOKS_HOOKS_H
+#ifndef HADRON_HOOKS_HOOKS_H
+#define HADRON_HOOKS_HOOKS_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -64,7 +64,7 @@ int np_hooks_install_steamui(const struct mach_header_64 *mh, intptr_t slide,
                              np_resolve_result_t *resolved, int *total_out);
 
 // True when `label` is one entry of the comma-separated value of env var `var`.
-// NOTPROTON_DISABLE uses this to skip named hooks.
+// HADRON_DISABLE uses this to skip named hooks.
 int np_hooks_env_lists_label(const char *var, const char *label);
 
 void np_hooks_launch_install(const struct mach_header_64 *mh, intptr_t slide);
@@ -73,4 +73,4 @@ void np_hooks_launch_install(const struct mach_header_64 *mh, intptr_t slide);
 // can spawn anything, so this one does not wait for steamclient the way the rest do.
 void np_hooks_spawn_install(void);
 
-#endif // NOTPROTON_HOOKS_HOOKS_H
+#endif // HADRON_HOOKS_HOOKS_H

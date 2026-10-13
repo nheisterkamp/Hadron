@@ -15,7 +15,7 @@ for (const form of Object.keys(FORMS)) {
   for (const [chinese, cases] of [[true, zhCases], [false, enCases]]) {
     for (const globals of cases) {
       const { render, written } = panel(emit, form, globals);
-      const nodes = walk(render({ details: details('NOTPROTON_GRAPHICS=dxmt %command%') }));
+      const nodes = walk(render({ details: details('HADRON_GRAPHICS=dxmt %command%') }));
       const dropdowns = nodes.filter(n => n.type === 'Dropdown');
       assert.equal(dropdowns[0].props.rgOptions[1].label,
         chinese ? 'WineD3D（Wine 自带的 Direct3D）' : "WineD3D (Wine's own Direct3D)");
@@ -29,10 +29,10 @@ for (const form of Object.keys(FORMS)) {
       const raw = nodes.find(n => n.props.label === (chinese
         ? '允许游戏直接读取控制器' : 'Let games read controllers directly'));
       raw.props.onChange(true);
-      assert.equal(written.at(-1).opts, 'NOTPROTON_RAW_CONTROLLERS=1 NOTPROTON_GRAPHICS=dxmt %command%');
+      assert.equal(written.at(-1).opts, 'HADRON_RAW_CONTROLLERS=1 HADRON_GRAPHICS=dxmt %command%');
       const hud = nodes.find(n => n.props.label === (chinese ? 'Metal 性能监视器' : 'Metal HUD'));
       hud.props.onChange(true);
-      assert.equal(written.at(-1).opts, 'MTL_HUD_ENABLED=1 NOTPROTON_GRAPHICS=dxmt %command%');
+      assert.equal(written.at(-1).opts, 'MTL_HUD_ENABLED=1 HADRON_GRAPHICS=dxmt %command%');
       for (const [mode, en, zh] of [
         ['compat-hint', 'Enable Hadron under Properties > Compatibility to install and run the Windows version.',
           '请在“属性 > 兼容性”中启用 Hadron，以安装并运行 Windows 版本。'],

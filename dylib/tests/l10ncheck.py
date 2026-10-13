@@ -12,7 +12,7 @@ languages = sys.argv[3:]
 
 datas = []
 for path in sorted(intermediates.rglob("*.stringsdata")):
-    if "NotProtonAppTests" in path.parts:
+    if "HadronAppTests" in path.parts:
         continue
     if os.path.exists(json.loads(path.read_text())["source"]):
         datas.append(str(path))

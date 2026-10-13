@@ -15,18 +15,18 @@ const UPSCALED = 'DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG=d3d11.metalSpatia
 // arguments neither owns have to survive.
 const CASES = [
   { to: 'wined3d', from: UPSCALED, gone: DXMT, kept: [] },
-  { to: 'wined3d', from: 'NOTPROTON_GRAPHICS=dxmt ' + UPSCALED, gone: DXMT, kept: [] },
-  { to: 'dxmt',    from: UPSCALED, gone: ['NOTPROTON_GRAPHICS'], kept: DXMT },
-  { to: 'dxmt',    from: 'NOTPROTON_GRAPHICS=wined3d', gone: ['NOTPROTON_GRAPHICS'], kept: [] },
+  { to: 'wined3d', from: 'HADRON_GRAPHICS=dxmt ' + UPSCALED, gone: DXMT, kept: [] },
+  { to: 'dxmt',    from: UPSCALED, gone: ['HADRON_GRAPHICS'], kept: DXMT },
+  { to: 'dxmt',    from: 'HADRON_GRAPHICS=wined3d', gone: ['HADRON_GRAPHICS'], kept: [] },
   // DXMT is the default, so picking it leaves no variable behind.
-  { to: 'dxmt',    from: 'NOTPROTON_GRAPHICS=dxmt ' + UPSCALED, gone: ['NOTPROTON_GRAPHICS'], kept: DXMT },
-  { to: 'wined3d', from: 'NOTPROTON_GRAPHICS=wined3d', gone: [], kept: ['NOTPROTON_GRAPHICS=wined3d'] },
+  { to: 'dxmt',    from: 'HADRON_GRAPHICS=dxmt ' + UPSCALED, gone: ['HADRON_GRAPHICS'], kept: DXMT },
+  { to: 'wined3d', from: 'HADRON_GRAPHICS=wined3d', gone: [], kept: ['HADRON_GRAPHICS=wined3d'] },
   // Stripping arguments by name is the kind of thing that takes neighbours with it.
   { to: 'wined3d',
-    from: 'MTL_HUD_ENABLED=1 WINEDEBUG=-all NOTPROTON_RETINA=1 ' + UPSCALED + ' %command% -novid',
+    from: 'MTL_HUD_ENABLED=1 WINEDEBUG=-all HADRON_RETINA=1 ' + UPSCALED + ' %command% -novid',
     gone: DXMT,
-    kept: ['-novid', 'MTL_HUD_ENABLED=1', 'WINEDEBUG=-all', 'NOTPROTON_RETINA=1', '%command%',
-           'NOTPROTON_GRAPHICS=wined3d'] },
+    kept: ['-novid', 'MTL_HUD_ENABLED=1', 'WINEDEBUG=-all', 'HADRON_RETINA=1', '%command%',
+           'HADRON_GRAPHICS=wined3d'] },
 ];
 
 let failed = 0;

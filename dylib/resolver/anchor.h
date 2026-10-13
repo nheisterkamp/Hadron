@@ -1,6 +1,6 @@
 // Anchor-based function resolution
-#ifndef NOTPROTON_RESOLVER_ANCHOR_H
-#define NOTPROTON_RESOLVER_ANCHOR_H
+#ifndef HADRON_RESOLVER_ANCHOR_H
+#define HADRON_RESOLVER_ANCHOR_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -74,4 +74,4 @@ uintptr_t np_rtti_vptr(const struct mach_header_64 *mh, intptr_t slide,
                        uintptr_t text_base, size_t text_size,
                        const char *type_name);
 
-#endif // NOTPROTON_RESOLVER_ANCHOR_H
+#endif // HADRON_RESOLVER_ANCHOR_H

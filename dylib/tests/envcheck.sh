@@ -41,21 +41,21 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 np_root="$work/runtime"
 log=/dev/null
-graphics=$(sed -n '/^unset NOTPROTON_DLL_OVERLAY$/,/^echo "graphics:/p' "$SRC")
+graphics=$(sed -n '/^unset HADRON_DLL_OVERLAY$/,/^echo "graphics:/p' "$SRC")
 # shellcheck disable=SC2016 # Match the literal launcher loop.
 forward=$(sed -n '/^for name in $(env /,/^done$/p' "$SRC")
 [ -n "$graphics" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }
-unset NOTPROTON_GRAPHICS
+unset HADRON_GRAPHICS
 eval "$graphics"
-is "a runtime without DXMT leaves the overlay unset" "" "${NOTPROTON_DLL_OVERLAY:-}"
+is "a runtime without DXMT leaves the overlay unset" "" "${HADRON_DLL_OVERLAY:-}"
 mkdir -p "$np_root/lib/dxmt"
 eval "$graphics"
-is "DXMT is the default" "$np_root/lib/dxmt" "${NOTPROTON_DLL_OVERLAY:-}"
-is "helpers inherit the overlay" "$np_root/lib/dxmt" "$(sh -c 'printf %s "$NOTPROTON_DLL_OVERLAY"')"
-NOTPROTON_GRAPHICS=wined3d
+is "DXMT is the default" "$np_root/lib/dxmt" "${HADRON_DLL_OVERLAY:-}"
+is "helpers inherit the overlay" "$np_root/lib/dxmt" "$(sh -c 'printf %s "$HADRON_DLL_OVERLAY"')"
+HADRON_GRAPHICS=wined3d
 eval "$graphics"
-is "wined3d leaves Wine's own Direct3D" "" "${NOTPROTON_DLL_OVERLAY:-}"
-unset NOTPROTON_GRAPHICS
+is "wined3d leaves Wine's own Direct3D" "" "${HADRON_DLL_OVERLAY:-}"
+unset HADRON_GRAPHICS
 DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=2.0"
 UNRELATED_SETTING=1
 export DXMT_CONFIG UNRELATED_SETTING

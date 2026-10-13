@@ -236,7 +236,7 @@ int main(void) {
         }
     }
 
-    printf("== NOTPROTON_DISABLE=launch turns off the shell and the backslash hook ==\n");
+    printf("== HADRON_DISABLE=launch turns off the shell and the backslash hook ==\n");
     rebind_rc        = 1;
     np_shell_wrapped = 0;
     launch_disabled  = 1;

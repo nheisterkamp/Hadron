@@ -1,4 +1,4 @@
-/* Checks which d3d11 a game gets: with NOTPROTON_DLL_OVERLAY pointing at lib/dxmt it
+/* Checks which d3d11 a game gets: with HADRON_DLL_OVERLAY pointing at lib/dxmt it
  * should be DXMT, which loads winemetal.dll, and without it Wine's own, which does not.
  * Prints "dxmt" or "wine" and whether a hardware device could be created. Exit 0 when
  * the device was created. Build with mingw for x86_64, run with the runtime's wine. */

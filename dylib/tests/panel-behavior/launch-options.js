@@ -26,7 +26,7 @@ for (const form of Object.keys(FORMS)) {
     'WINEDEBUG=err+all,\\ trace+seh %command% --name two\\ words',
     'MTL_HUD_ENABLED_EXTRA=1 %command% --title "MTL_HUD_ENABLED=0 extra"',
     'DXMT_CONFIG="literal \\"quote\\" and \\\\slash" %command%',
-    'WINEDEBUG="$(touch /tmp/notproton-panel-must-not-run)" %command%',
+    'WINEDEBUG="$(touch /tmp/hadron-panel-must-not-run)" %command%',
     '\tWINEDEBUG="a b"\t%command%\t--name "two words"  ',
   ]) {
     written.length = 0;
@@ -65,15 +65,15 @@ for (const form of Object.keys(FORMS)) {
   t.ok(!hud('MTL_HUD_ENABLED=1 MTL_HUD_ENABLED="" %command%').props.checked,
        'an empty final assignment overrides earlier values');
 
-  t.ok(nodes('NOTPROTON_GRAPHICS="wined3d" %command%').find(x => x.type === 'Dropdown')
+  t.ok(nodes('HADRON_GRAPHICS="wined3d" %command%').find(x => x.type === 'Dropdown')
          .props.selectedOption === 'wined3d', 'reads a quoted graphics choice');
-  const backendOptions = 'NOTPROTON_GRAPHICS="dxmt" DXMT_CONFIG="a=1 b=2" '
+  const backendOptions = 'HADRON_GRAPHICS="dxmt" DXMT_CONFIG="a=1 b=2" '
                        + 'DXMT_METALFX_SPATIAL_SWAPCHAIN="1" %command% --title "a b"';
   written.length = 0;
   const backend = nodes(backendOptions).find(x => x.type === 'Dropdown');
   t.ok(backend.props.selectedOption === 'dxmt', 'reads a quoted dxmt');
   backend.props.onChange({ data: 'wined3d' });
-  t.ok(last() === `NOTPROTON_GRAPHICS=wined3d DXMT_CONFIG='a=1 b=2' %command% --title "a b"`,
+  t.ok(last() === `HADRON_GRAPHICS=wined3d DXMT_CONFIG='a=1 b=2' %command% --title "a b"`,
        'switching keeps DXMT_CONFIG entries the panel did not set and keeps game arguments');
 
   const upscaled = 'DXMT_METALFX_SPATIAL_SWAPCHAIN="1" '
@@ -112,7 +112,7 @@ for (const form of Object.keys(FORMS)) {
                      'WINEDEBUG=`id` %command%', 'WINEDEBUG=1 %command% >log',
                      'MTL_HUD_ENABLED=0 %COMMAND%', 'MTL_HUD_ENABLED=0 %command%%command%',
                      'MTL_HUD_ENABLED=0 "%command%"', 'gamemoderun MTL_HUD_ENABLED=1 %command%',
-                     'nice -n 5 NOTPROTON_GRAPHICS=wined3d %command%']) {
+                     'nice -n 5 HADRON_GRAPHICS=wined3d %command%']) {
     written.length = 0;
     const ns = nodes(odd);
     t.ok(ns.every(x => !x.props.disabled && x.props.role !== 'status'), `edits ${JSON.stringify(odd)}`);

@@ -1,6 +1,6 @@
 // Pointer validation helpers
-#ifndef NOTPROTON_UTIL_PTR_H
-#define NOTPROTON_UTIL_PTR_H
+#ifndef HADRON_UTIL_PTR_H
+#define HADRON_UTIL_PTR_H
 
 #include <stdint.h>
 
@@ -11,4 +11,4 @@ static inline int np_plausible_ptr(uint64_t v) {
     return 1;
 }
 
-#endif // NOTPROTON_UTIL_PTR_H
+#endif // HADRON_UTIL_PTR_H

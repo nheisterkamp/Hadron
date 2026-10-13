@@ -1,6 +1,6 @@
 // Hex helpers
-#ifndef NOTPROTON_UTIL_HEX_H
-#define NOTPROTON_UTIL_HEX_H
+#ifndef HADRON_UTIL_HEX_H
+#define HADRON_UTIL_HEX_H
 
 static inline int np_hex_val(int ch) {
     if (ch >= '0' && ch <= '9')
@@ -11,4 +11,4 @@ static inline int np_hex_val(int ch) {
     return -1;
 }
 
-#endif // NOTPROTON_UTIL_HEX_H
+#endif // HADRON_UTIL_HEX_H

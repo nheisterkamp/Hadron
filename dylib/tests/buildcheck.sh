@@ -25,7 +25,7 @@ clone() {
 }
 clone wine-11.15 202607151200
 clone wine-12.0-arm64 202608211200
-printf 'notproton-wine-arm64\twine-12.0-arm64\tfex\tHadron Wine 12.0 (FEX)\nnotproton-wine\twine-11.15\trosetta\tHadron Wine 11.15\n' \
+printf 'hadron-proton-wine-arm64\twine-12.0-arm64\tfex\tHadron Wine 12.0 (FEX)\nhadron-proton-wine\twine-11.15\trosetta\tHadron Wine 11.15\n' \
 	> "$np_support/tools"
 mtime() { stat -f %m "$np_support/runners/$1/share/wine/wine.inf"; }
 
@@ -39,7 +39,7 @@ launch() {
 	data=$(mktemp -d "$work/compatdata.XXXXXX")
 	mkdir -p "$data/pfx"
 	[ -z "$updated" ] || printf '%s\r\n' "$updated" > "$data/pfx/.update-timestamp"
-	[ -z "$record" ] || printf '%s' "$record" > "$data/notproton-build"
+	[ -z "$record" ] || printf '%s' "$record" > "$data/hadron-build"
 	(
 		STEAM_COMPAT_DATA_PATH=$data
 		np_build=$build
@@ -54,7 +54,7 @@ launch() {
 	) > "$data/out" 2>&1 && status=0 || status=$?
 	echo "status=$status"
 	grep -o 'last run by [^,]*' "$data/out" || true
-	[ ! -f "$data/notproton-build" ] || head -1 "$data/notproton-build"
+	[ ! -f "$data/hadron-build" ] || head -1 "$data/hadron-build"
 }
 
 echo "== prefixes from before the record =="

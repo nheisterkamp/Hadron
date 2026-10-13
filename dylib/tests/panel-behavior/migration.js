@@ -43,8 +43,8 @@ const app = (id, o, over) => Object.assign(
   const rule = [
     ['MTL_HUD_ENABLED=1 -dx11', 'MTL_HUD_ENABLED=1 %command% -dx11'],
     ['-dx11 WINEDEBUG=-all', 'WINEDEBUG=-all %command% -dx11'],
-    ['NOTPROTON_GRAPHICS=wined3d DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2',
-     'NOTPROTON_GRAPHICS=wined3d DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2 %command%'],
+    ['HADRON_GRAPHICS=wined3d DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2',
+     'HADRON_GRAPHICS=wined3d DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2 %command%'],
     ['WINEDLLOVERRIDES=d3d11=n;dxgi=n -novid', "WINEDLLOVERRIDES='d3d11=n;dxgi=n' %command% -novid"],
     ['WINEDEBUG="a b" -x "two words"', 'WINEDEBUG="a b" %command% -x "two words"'],
     ['  MTL_HUD_ENABLED=1   -a  ', 'MTL_HUD_ENABLED=1 %command% -a'],
@@ -79,7 +79,7 @@ const app = (id, o, over) => Object.assign(
   t.ok(other.written.length === 1, 'another account gets its own pass');
 
   const native = steam([app(1, 'MTL_HUD_ENABLED=1', { vecPlatforms: ['windows', 'osx'] }),
-                        app(2, 'MTL_HUD_ENABLED=1', { vecPlatforms: ['osx'], strCompatToolName: 'notproton' }),
+                        app(2, 'MTL_HUD_ENABLED=1', { vecPlatforms: ['osx'], strCompatToolName: 'hadron' }),
                         app(2147483650, 'MTL_HUD_ENABLED=1', { vecPlatforms: ['osx'] })]);
   await native.go();
   t.ok(native.written.map(x => x.appid).join() === '2,2147483650',

@@ -194,7 +194,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".NPHadronPanel .NPHadronRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
     ".NPNoBottomGap{margin-bottom:0}\""
 
-// NOTPROTON_GRAPHICS picks the D3D10/11 path: unset or dxmt is DXMT on Metal, wined3d
+// HADRON_GRAPHICS picks the D3D10/11 path: unset or dxmt is DXMT on Metal, wined3d
 // is Wine's own Direct3D. The DXMT rows go with DXMT, so leaving it clears them.
 #define NP_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
@@ -213,7 +213,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"NPHadronRow\",label:l," \
     "checked:g(ks[0])===on," \
     "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
-    "b=g(\"NOTPROTON_GRAPHICS\")||\"dxmt\"," \
+    "b=g(\"HADRON_GRAPHICS\")||\"dxmt\"," \
     "dx=\"dxmt\"===b," \
     "sw=\"1\"===g(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
     "F=\"d3d11.metalSpatialUpscaleFactor=\"," \
@@ -235,13 +235,13 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "(0," RT ".jsx)(\"style\",{children:" NP_OPTIONS_CSS "})," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
-    "onChange:v=>s([[\"NOTPROTON_GRAPHICS\",\"dxmt\"===v.data?\"\":v.data]]" \
+    "onChange:v=>s([[\"HADRON_GRAPHICS\",\"dxmt\"===v.data?\"\":v.data]]" \
     ".concat(\"dxmt\"===v.data?[]:[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"]," \
     "[\"DXMT_CONFIG\",fx(\"\")],[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
     "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\"),\"1\")," \
     "dx&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
     "T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
-    "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")" \
+    "T([\"HADRON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")" \
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
@@ -251,7 +251,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "onChange:v=>s([[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
     "(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Controllers (May break Steam Input. Not recommended)\"," \
     "\"控制器（可能导致 Steam Input 失效，不推荐）\"),children:" \
-    "T([\"NOTPROTON_RAW_CONTROLLERS\"],npL(\"Let games read controllers directly\"," \
+    "T([\"HADRON_RAW_CONTROLLERS\"],npL(\"Let games read controllers directly\"," \
     "\"允许游戏直接读取控制器\"),\"1\",\"\")},\"ctl\")" \
     "]})})}"
 
@@ -266,7 +266,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_LAUNCH_MIGRATION_RULE \
     "o=>{const T=/(?:[^\\s\"'\\\\]|\\\\[^]|\"(?:[^\"\\\\]|\\\\[^])*\"|'[^']*')+/g," \
     "w=o.match(T)||[]," \
-    "k=x=>/^(DXMT_|DXVK_|MTL_|NOTPROTON_|ROSETTA_|WINE)\\w*=/.test(x)," \
+    "k=x=>/^(DXMT_|DXVK_|MTL_|HADRON_|ROSETTA_|WINE)\\w*=/.test(x)," \
     "e=w.filter(k);" \
     "if(/%command%/i.test(o)||o.replace(T,\"\").trim()||!e.length)return null;" \
     "return e.map(x=>{const i=x.indexOf(\"=\"),v=x.slice(i+1);" \
@@ -275,21 +275,21 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 #define NP_LAUNCH_MIGRATION \
     "(async()=>{try{" \
-    "const K=\"NotProtonLaunchMigrated_\"+this.m_cm.steamid.GetAccountID();" \
+    "const K=\"HadronLaunchMigrated_\"+this.m_cm.steamid.GetAccountID();" \
     "if(localStorage.getItem(K))return;" \
     "const M=" NP_LAUNCH_MIGRATION_RULE ";" \
     "const A=[...window.appStore.m_mapApps.values()].filter(a=>a);let n=0;" \
     "for(let i=0;i<A.length;i+=20)await Promise.all(A.slice(i,i+20).map(async a=>{const id=a.appid;" \
     "const t=await Promise.race([window.appDetailsStore.RequestAppDetails(id)," \
     "new Promise(r=>setTimeout(r,5e3))]);" \
-    "if(!t){console.warn(\"NotProton: no details for app \"+id+\", its launch options were not moved\");return}" \
+    "if(!t){console.warn(\"Hadron: no details for app \"+id+\", its launch options were not moved\");return}" \
     "if(!(id<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0&&!t.strCompatToolName)){" \
     "const r=M(t.strLaunchOptions||\"\");" \
     "if(r!==null){SteamClient.Apps.SetAppLaunchOptions(id,r);n++;" \
-    "console.log(\"NotProton: moved the launch options of app \"+id)}}}));" \
-    "console.log(\"NotProton: checked the launch options of \"+A.length+\" apps, moved \"+n);" \
+    "console.log(\"Hadron: moved the launch options of app \"+id)}}}));" \
+    "console.log(\"Hadron: checked the launch options of \"+A.length+\" apps, moved \"+n);" \
     "localStorage.setItem(K,\"1\")" \
-    "}catch(e){console.error(\"NotProton: launch options migration failed\",e)}})()"
+    "}catch(e){console.error(\"Hadron: launch options migration failed\",e)}})()"
 
 static const np_gate_t g_gates_forcetool[] = {
     // SteamPlay settings section

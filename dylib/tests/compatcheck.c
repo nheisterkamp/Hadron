@@ -39,7 +39,7 @@ static void check(int ok, const char *what) {
 static void *first_fallback(void *arg) {
     int *ok = arg;
     const char *name = np_compat_fallback_tool_name();
-    *ok = atomic_load(&home_ready) && strcmp(name, "notproton") == 0;
+    *ok = atomic_load(&home_ready) && strcmp(name, "hadron") == 0;
     return NULL;
 }
 
@@ -235,34 +235,34 @@ static void tool_list_cases(void) {
         check(0, "the tool list fixture can be written");
         return;
     }
-    fputs("notproton-wine\twine-11.15\trosetta\tHadron Wine 11.15\n"
-          "notproton-arm\t1.0\tfex\tArm Tool\n"
-          "notproton-wine-11.14\twine-11.14\trosetta\tHadron Wine 11.14\n"
-          "notproton-old\t2.0.1\trosetta\tOld Tool\n"
-          "notproton-wine\twine-11.14\trosetta\tDuplicate\n"
+    fputs("hadron-proton-wine\twine-11.15\trosetta\tHadron Wine 11.15\n"
+          "hadron-arm\t1.0\tfex\tArm Tool\n"
+          "hadron-proton-wine-11.14\twine-11.14\trosetta\tHadron Wine 11.14\n"
+          "hadron-old\t2.0.1\trosetta\tOld Tool\n"
+          "hadron-proton-wine\twine-11.14\trosetta\tDuplicate\n"
           "proton-other\t1\trosetta\tForeign\n"
-          "notproton-x\t1\tarm\tBad flavor\n"
-          "notproton-q\t1\trosetta\tQuote\"d\n"
-          "notproton-short\t1\trosetta\n"
+          "hadron-x\t1\tarm\tBad flavor\n"
+          "hadron-q\t1\trosetta\tQuote\"d\n"
+          "hadron-short\t1\trosetta\n"
           "\n", f);
     fclose(f);
 
     int kept = np_compat_load_tool_list(path, "/tools");
     unlink(path);
 
-    check(kept == 4, "only well-formed, unique, notproton-named lines are kept");
-    check(strcmp(g_tools[0].name, "notproton-wine") == 0
+    check(kept == 4, "only well-formed, unique, hadron-named lines are kept");
+    check(strcmp(g_tools[0].name, "hadron-proton-wine") == 0
           && strcmp(g_tools[0].flavor, "rosetta") == 0, "the first line stays first");
     check(strcmp(g_tools[1].flavor, "fex") == 0, "the fex flavor still parses");
     check(strcmp(g_tools[3].build, "2.0.1") == 0
-          && strcmp(g_tools[3].dir, "/tools/notproton-old") == 0,
+          && strcmp(g_tools[3].dir, "/tools/hadron-old") == 0,
           "each tool carries its build and directory");
 
     uint8_t *mgr = build_manager(3, -1);
-    *(const char **)(entries + np_compat_tool_stride() + COMPAT_TOOL_NAME_OFF) = "notproton-old";
+    *(const char **)(entries + np_compat_tool_stride() + COMPAT_TOOL_NAME_OFF) = "hadron-old";
     check(np_compat_registered_tool(mgr) == entries + np_compat_tool_stride(),
           "the most preferred tool the manager holds is the default");
-    *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "notproton-wine";
+    *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "hadron-proton-wine";
     check(np_compat_registered_tool(mgr) == entries,
           "the first listed tool wins when the manager holds it");
 
@@ -272,13 +272,13 @@ static void tool_list_cases(void) {
         return;
     }
     for (int i = 0; i < 40; i++)
-        fprintf(f, "notproton-%d\t1\trosetta\tTool %d\n", i, i);
+        fprintf(f, "hadron-%d\t1\trosetta\tTool %d\n", i, i);
     fclose(f);
     kept = np_compat_load_tool_list(path, "/tools");
     unlink(path);
-    check(kept == 40 && strcmp(g_tools[39].name, "notproton-39") == 0
-          && strcmp(g_tools[0].dir, "/tools/notproton-0") == 0, "a long list keeps every tool");
-    check(strcmp(np_compat_fallback_tool_name(), "notproton-0") == 0,
+    check(kept == 40 && strcmp(g_tools[39].name, "hadron-39") == 0
+          && strcmp(g_tools[0].dir, "/tools/hadron-0") == 0, "a long list keeps every tool");
+    check(strcmp(np_compat_fallback_tool_name(), "hadron-0") == 0,
           "the fallback is the first configured tool");
 
     check(np_compat_load_tool_list("out/compatcheck-missing", "/tools") == 0
@@ -287,19 +287,19 @@ static void tool_list_cases(void) {
 
 static void tool_launch_cases(void) {
     static const char *tool[] = {
-        "'/tools/compatibilitytools.d/notproton/.'/run waitforexitandrun  '/g/game.exe'",
-        "A=1 '/tools/compatibilitytools.d/notproton-26.3/.'/run waitforexitandrun  '/g/game.exe' -x",
-        "'/tools/compatibilitytools.d/notproton-wine/.'/run run ",
-        "'/tools/compatibilitytools.d/notproton'/run waitforexitandrun  '/g/game.exe'",
-        "'/Volumes/Ext/Steam/compatibilitytools.d/notproton/.'/run waitforexitandrun '/g/game.exe'",
+        "'/tools/compatibilitytools.d/hadron/.'/run waitforexitandrun  '/g/game.exe'",
+        "A=1 '/tools/compatibilitytools.d/hadron-26.3/.'/run waitforexitandrun  '/g/game.exe' -x",
+        "'/tools/compatibilitytools.d/hadron-proton-wine/.'/run run ",
+        "'/tools/compatibilitytools.d/hadron'/run waitforexitandrun  '/g/game.exe'",
+        "'/Volumes/Ext/Steam/compatibilitytools.d/hadron/.'/run waitforexitandrun '/g/game.exe'",
     };
     static const char *native[] = {
         "'/g/Game.app' -windowed",
         "'/g/Game.app/Contents/MacOS/Game'",
         "'/tools/compatibilitytools.d/proton-other/.'/run waitforexitandrun '/g/game.exe'",
-        "'/tools/compatibilitytools.d/notproton/Game' -x",
-        "'/tools/compatibilitytools.d/notproton/sub/.'/run waitforexitandrun '/g/game.exe'",
-        "'/tools/compatibilitytools.d/notproton'/other '/g/game.exe'",
+        "'/tools/compatibilitytools.d/hadron/Game' -x",
+        "'/tools/compatibilitytools.d/hadron/sub/.'/run waitforexitandrun '/g/game.exe'",
+        "'/tools/compatibilitytools.d/hadron'/other '/g/game.exe'",
         "",
     };
     for (size_t i = 0; i < sizeof(tool) / sizeof(tool[0]); i++)
@@ -329,26 +329,26 @@ static void stale_tool_cases(void) {
         return;
     }
     char current[700], legacy[700], older[700], user[700], near[700], lookalike[700];
-    snprintf(current, sizeof(current), "%s/notproton-wine-11.14", root);
-    snprintf(legacy, sizeof(legacy), "%s/notproton", root);
-    snprintf(older, sizeof(older), "%s/notproton-old", root);
-    snprintf(user, sizeof(user), "%s/notproton-mine", root);
-    snprintf(near, sizeof(near), "%s/notproton-near", root);
-    snprintf(lookalike, sizeof(lookalike), "%s/notproton-copy", root);
+    snprintf(current, sizeof(current), "%s/hadron-proton-wine-11.14", root);
+    snprintf(legacy, sizeof(legacy), "%s/hadron", root);
+    snprintf(older, sizeof(older), "%s/hadron-old", root);
+    snprintf(user, sizeof(user), "%s/hadron-mine", root);
+    snprintf(near, sizeof(near), "%s/hadron-near", root);
+    snprintf(lookalike, sizeof(lookalike), "%s/hadron-copy", root);
     const char *dirs[] = { current, legacy, older, user, near, lookalike };
     for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) mkdir(dirs[i], 0755);
 
     put(current, "flavor", "rosetta\n");
-    put(current, "run", "#!/bin/sh\n# notproton compatibility tool shim\n");
-    put(legacy, "run", "#!/bin/sh\n# notproton compatibility tool shim\nset -e\n");
+    put(current, "run", "#!/bin/sh\n# hadron compatibility tool shim\n");
+    put(legacy, "run", "#!/bin/sh\n# hadron compatibility tool shim\nset -e\n");
     put(legacy, "toolmanifest.vdf", "\"manifest\" {}\n");
     put(legacy, "compatibilitytool.vdf", "\"compatibilitytools\" {}\n");
     // Older builds named their runtime in the marker.
-    put(older, "run", "#!/bin/sh\n# notproton Some Runtime compatibility tool shim\nset -e\n");
+    put(older, "run", "#!/bin/sh\n# hadron Some Runtime compatibility tool shim\nset -e\n");
     put(user, "run", "#!/bin/sh\nexec my-wine \"$@\"\n");
-    put(near, "run", "#!/bin/sh\n# notproton compatibility tool shim wrapper\n"
-                     "# not notproton compatibility tool shim\n");
-    put(lookalike, "run", "#!/bin/sh\n# notproton Some Runtime compatibility tool shim\n");
+    put(near, "run", "#!/bin/sh\n# hadron compatibility tool shim wrapper\n"
+                     "# not hadron compatibility tool shim\n");
+    put(lookalike, "run", "#!/bin/sh\n# hadron Some Runtime compatibility tool shim\n");
     put(lookalike, "notes.txt", "mine\n");
 
     g_tool_count = 0;
@@ -357,7 +357,7 @@ static void stale_tool_cases(void) {
     check(!exists(current), "an unlisted tool with a flavor file is removed");
     check(!exists(legacy), "the single-tool dylib's directory is removed");
     check(!exists(older), "a run script with an older build's marker is ours");
-    check(exists(user), "a notproton directory the user wrote stays");
+    check(exists(user), "a hadron directory the user wrote stays");
     check(exists(near), "a line that only looks like the marker is not ours");
     char notes[768];
     snprintf(notes, sizeof(notes), "%s/notes.txt", lookalike);
@@ -382,9 +382,9 @@ static void run_mark_cases(void) {
     snprintf(head, sizeof(head), "%s", RUN_SCRIPT);
     check(strstr(head, RUN_SCRIPT_MARK) != NULL, "the run script carries the marker early on");
     check(has_run_mark(head), "the run script is recognized as ours");
-    check(!has_run_mark("#!/bin/sh\n# notproton compatibility tool shim"),
+    check(!has_run_mark("#!/bin/sh\n# hadron compatibility tool shim"),
           "a marker without its line end is not one");
-    check(!has_run_mark("#!/bin/sh\n# notproton\n compatibility tool shim\n"),
+    check(!has_run_mark("#!/bin/sh\n# hadron\n compatibility tool shim\n"),
           "a marker split over two lines is not one");
 }
 
@@ -433,9 +433,9 @@ static void installed_fn_cases(void) {
     check(np_compat_valid_platforms(NULL, 7) == 0, "no manager reports no platform");
 
     np_compat_set_app_mapping_fn((uintptr_t)stub_find_mapping);
-    stub_mapping_entry[0] = "notproton";
+    stub_mapping_entry[0] = "hadron";
     check(np_compat_app_mapping(manager, 7) != NULL, "a mapped app reports its entry");
-    check(strcmp(np_compat_app_mapping(manager, 7), "notproton") == 0,
+    check(strcmp(np_compat_app_mapping(manager, 7), "hadron") == 0,
           "the name in the entry is what comes back");
     check(np_compat_app_mapping(manager, 0) == NULL,
           "appid zero is refused rather than reaching the global entry");
@@ -448,12 +448,12 @@ static void installed_fn_cases(void) {
 
     np_compat_set_mapping_fn((uintptr_t)stub_set_mapping);
     last_priority = 0;
-    np_compat_map_tool(manager, 7, "notproton");
+    np_compat_map_tool(manager, 7, "hadron");
     check(last_appid == 7 && last_priority == COMPAT_MAPPING_PRIORITY_APP,
           "an app mapping outranks the global one");
 
     last_priority = 0;
-    np_compat_map_tool(manager, 0, "notproton");
+    np_compat_map_tool(manager, 0, "hadron");
     check(last_appid == 0 && last_priority == COMPAT_MAPPING_PRIORITY_GLOBAL,
           "the global mapping stays under the threshold that skips the platform check");
 

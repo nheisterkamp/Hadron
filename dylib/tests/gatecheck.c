@@ -27,7 +27,7 @@ static void wrong(const char *fmt, ...) {
 static void *rewrite_fallback(void *arg) {
     atomic_int *stop = arg;
     while (!atomic_load(stop))
-        np_webpatch_set_fallback_tool("notproton-wine");
+        np_webpatch_set_fallback_tool("hadron-proton-wine");
     return NULL;
 }
 
@@ -36,7 +36,7 @@ static void check_fallback(void) {
         "return t?(0,i.jsx)(m.B,{feature:p.OK,label:(0,l.we)"
         "(\"#Settings_SteamPlay_DefaultTool\"),rgOptions:A,disabled:0==A.length,"
         "selectedOption:t,onChange:e=>g(e.data)}):null";
-    np_webpatch_set_fallback_tool("notproton-wine");
+    np_webpatch_set_fallback_tool("hadron-proton-wine");
     atomic_int stop = 0;
     pthread_t writer;
     if (pthread_create(&writer, NULL, rewrite_fallback, &stop) != 0) {
@@ -50,8 +50,8 @@ static void check_fallback(void) {
         char *out = np_webpatch_transform((const uint8_t *)source, sizeof(source) - 1,
                                          &length, NULL);
         int ok = out && !memchr(out, '\0', length)
-            && strstr(out, "A.some(e=>e.data===\"notproton-wine\")")
-            && strstr(out, "selectedOption:t||\"notproton-wine\"");
+            && strstr(out, "A.some(e=>e.data===\"hadron-proton-wine\")")
+            && strstr(out, "selectedOption:t||\"hadron-proton-wine\"");
         free(out);
         if (!ok) {
             wrong("concurrent fallback writes changed a chunk's tool name");
@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
 
     if (argc < 2) { selfcheck(); check_fallback(); return g_wrong; }
 
-    np_webpatch_set_fallback_tool("notproton-wine");
+    np_webpatch_set_fallback_tool("hadron-proton-wine");
 
     for (int i = 1; i < argc; i++) {
         size_t len = 0;

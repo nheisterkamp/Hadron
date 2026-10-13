@@ -1,6 +1,6 @@
 // CompatManager WebUI service.
-#ifndef NOTPROTON_FEATS_COMPATSVC_H
-#define NOTPROTON_FEATS_COMPATSVC_H
+#ifndef HADRON_FEATS_COMPATSVC_H
+#define HADRON_FEATS_COMPATSVC_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -21,9 +21,9 @@ enum {
 int np_compatsvc_routes(void);
 
 // Sentinel name for "no tool".
-#define NP_COMPAT_TOOL_NONE "notproton.none"
+#define NP_COMPAT_TOOL_NONE "hadron.none"
 
 // Tells the page the mapping changed.
 void np_compatsvc_state_changed(void);
 
-#endif // NOTPROTON_FEATS_COMPATSVC_H
+#endif // HADRON_FEATS_COMPATSVC_H

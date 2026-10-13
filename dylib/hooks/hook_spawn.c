@@ -190,8 +190,8 @@ static int np_hook_symbol(const char *sym, void *repl, void **orig) {
 }
 
 void np_hooks_spawn_install(void) {
-    if (np_hooks_env_lists_label("NOTPROTON_DISABLE", "spawn")) {
-        NP_WARN("[spawn] DISABLED via NOTPROTON_DISABLE, children keep the insert");
+    if (np_hooks_env_lists_label("HADRON_DISABLE", "spawn")) {
+        NP_WARN("[spawn] DISABLED via HADRON_DISABLE, children keep the insert");
         return;
     }
 

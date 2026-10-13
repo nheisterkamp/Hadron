@@ -45,7 +45,7 @@ make bridge dobby fonts app
 
 `make fonts` also needs FontForge, GNU patch and afdko 4.0. Then open `out/Hadron.app`,
 add `out/runtime/wine-11.15` with "Add Wine Runtime…" (or put it in
-`~/Library/Application Support/notproton/runtimes/`), set it up, and install into Steam.
+`~/Library/Application Support/hadron/runtimes/`), set it up, and install into Steam.
 
 ## Source layout
 
