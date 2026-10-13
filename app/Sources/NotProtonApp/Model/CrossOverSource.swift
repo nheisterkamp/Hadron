@@ -118,6 +118,8 @@ enum CrossOverSource {
     }
 
     static func preferred(_ a: CrossOverInstall, _ b: CrossOverInstall) -> Bool {
+        // Hadron's own runtime first, so installing never stops at a CrossOver license.
+        if a.isUsable && b.isUsable && a.isRuntime != b.isRuntime { return a.isRuntime }
         if a.isManual != b.isManual { return a.isManual }
         if a.isUsable != b.isUsable { return a.isUsable }
         if a.isPreview != b.isPreview { return a.isPreview }

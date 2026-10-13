@@ -52,6 +52,20 @@ struct WineRuntimeTests {
         #expect(install.name == "Hadron Wine 11.15")
     }
 
+    @Test("A usable runtime is preferred over a usable CrossOver, even one picked by hand")
+    func runtimeComesFirst() throws {
+        let dir = try scratchDirectory("runtime-order")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runtime = CrossOverSource.inspect(bundle: try Self.runtime(in: dir))
+        let build = try #require(SupportedRunners.all.first { $0.source == .crossOver })
+        let crossOver = CrossOverInstall(
+            bundle: dir.appending(path: "CrossOver.app"), releaseVersion: build.releaseVersion,
+            support: .supported(build), isManual: true
+        )
+
+        #expect([crossOver, runtime].sorted(by: CrossOverSource.preferred).map(\.isRuntime) == [true, false])
+    }
+
     @Test("A runtime with an unknown id is listed as unsupported")
     func unknownRuntime() throws {
         let dir = try scratchDirectory("runtime-unknown")
