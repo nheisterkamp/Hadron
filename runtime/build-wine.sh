@@ -62,8 +62,10 @@ DOWNLOADS="${DOWNLOADS:-$repo/scratch/downloads}"
 OUT="${OUT:-$repo/out/runtime/$RUNTIME_ID}"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu)}"
 
-# Vulkan for winevulkan, DXVK and wined3d's Vulkan renderer. Pinned to the digest
-# GitHub publishes for the release asset.
+# Vulkan for winevulkan, DXVK and wined3d's Vulkan renderer. Wine loads the Khronos
+# loader, which takes its driver from VK_DRIVER_FILES: MoltenVK, or KosmicKrisp (Mesa's
+# Vulkan 1.3+ driver on Metal) for DXVK 3, which MoltenVK cannot run. MoltenVK is pinned
+# to the digest GitHub publishes; the loader and KosmicKrisp come from the template below.
 MOLTENVK_VERSION=1.4.2
 MOLTENVK_SHA=f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
 
@@ -157,8 +159,17 @@ prepare_source() {
         echo "==> registering lsteamclient and steam.exe with configure"
         git -C "$WINE_SRC" apply --include=configure.ac "$repo/bridge/register-components.diff"
     fi
-    for patch in "$here"/patches/*.patch; do
-        [ -f "$here/patches/$RUNTIME_ID/${patch##*/}" ] && patch="$here/patches/$RUNTIME_ID/${patch##*/}"
+    # Every runtime gets patches/*.patch, where patches/<runtime>/ may replace one by
+    # name. A patch only in patches/<runtime>/ is for that runtime alone.
+    for name in $( (cd "$here/patches" && ls ./*.patch; [ -d "$RUNTIME_ID" ] && cd "$RUNTIME_ID" && ls ./*.patch) \
+        | sed 's|^\./||' | sort -u); do
+        patch="$here/patches/$name"
+        [ -f "$here/patches/$RUNTIME_ID/$name" ] && patch="$here/patches/$RUNTIME_ID/$name"
+        # An override without a diff says why this Wine needs none.
+        if ! grep -q '^diff ' "$patch"; then
+            echo "==> skipping ${patch##*/}: $(sed 's/^# *//' "$patch")"
+            continue
+        fi
         echo "==> applying ${patch#"$here"/patches/}"
         git -C "$WINE_SRC" apply "$patch" || die "${patch##*/} does not apply to $RUNTIME_ID"
     done
@@ -251,13 +262,13 @@ if [ ! -f "$WINE_BUILD/Makefile" ]; then
         --host=x86_64-apple-darwin CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
         FREETYPE_CFLAGS="-I$DEPS/include/freetype2" FREETYPE_LIBS="-L$DEPS/lib -lfreetype" \
         ac_cv_lib_soname_freetype="$UNIX_TO_LIB/libfreetype.6.dylib" \
-        ac_cv_lib_soname_MoltenVK="$UNIX_TO_LIB/libMoltenVK.dylib" \
+        ac_cv_lib_soname_vulkan="$UNIX_TO_LIB/libvulkan.1.dylib" \
         ac_cv_lib_soname_gnutls="$UNIX_TO_LIB/libgnutls.30.dylib" )
 fi
 grep -q '^host_cpu = x86_64' "$WINE_BUILD/config.status" \
     || die "configure did not take the x86_64 host"
-grep -q 'SONAME_LIBVULKAN "@loader_path' "$WINE_BUILD/include/config.h" \
-    || die "configure did not take MoltenVK, remove $WINE_BUILD to configure again"
+grep -q 'SONAME_LIBVULKAN "@loader_path/../../libvulkan.1.dylib"' "$WINE_BUILD/include/config.h" \
+    || die "configure did not take the Vulkan loader, remove $WINE_BUILD to configure again"
 grep -q 'SONAME_LIBGNUTLS "@loader_path' "$WINE_BUILD/include/config.h" \
     || die "configure did not take GnuTLS, remove $WINE_BUILD to configure again"
 
@@ -356,6 +367,26 @@ if [ ! -d "$renderers" ]; then
         "${template%.tar.xz}.app/Contents/Frameworks/renderer"
     mv "$renderers.new" "$renderers"
 fi
+# The Vulkan loader and KosmicKrisp, beside MoltenVK, each with a driver manifest whose
+# path is relative to the manifest.
+template="${tarball##*/}"
+frameworks="${template%.tar.xz}.app/Contents/Frameworks"
+vulkan="$DOWNLOADS/template-vulkan"
+if [ ! -d "$vulkan" ]; then
+    rm -rf "$vulkan.new" && mkdir -p "$vulkan.new"
+    tar -xJf "$tarball" -C "$vulkan.new" --strip-components 3 \
+        "$frameworks/libvulkan.1.4.363.dylib" "$frameworks/libvulkan_kosmickrisp.dylib"
+    mv "$vulkan.new" "$vulkan"
+fi
+cp "$vulkan/libvulkan.1.4.363.dylib" "$OUT/lib/libvulkan.1.dylib"
+cp "$vulkan/libvulkan_kosmickrisp.dylib" "$OUT/lib/"
+mkdir -p "$OUT/share/vulkan/icd.d"
+for driver in MoltenVK:libMoltenVK.dylib:1.4.0 kosmickrisp:libvulkan_kosmickrisp.dylib:1.4.363; do
+    printf '{\n    "file_format_version": "1.0.1",\n    "ICD": {\n        "library_path": "../../../lib/%s",\n        "api_version": "%s"\n    }\n}\n' \
+        "$(echo "$driver" | cut -d: -f2)" "$(echo "$driver" | cut -d: -f3)" \
+        > "$OUT/share/vulkan/icd.d/$(echo "$driver" | cut -d: -f1)_icd.json"
+done
+
 for pair in $TEMPLATE_BACKENDS; do
     from="${pair%%:*}"
     name="${pair#*:}"
@@ -370,6 +401,17 @@ for pair in $TEMPLATE_BACKENDS; do
     done
     cp "$renderers/$from/LICENSE" "$renderers/$from/version" "$OUT/lib/graphics/$name/"
 done
+
+# D3DMetal, Apple's D3D11/12 on Metal from the Game Porting Toolkit, through the glue in
+# patch 0004. Its DLLs are marked builtin already. The unix modules find libd3dshared
+# beside them, and libd3dshared finds D3DMetal.framework beside itself.
+echo "==> adding D3DMetal under lib/graphics/d3dmetal"
+d3dmetal="$renderers/d3dmetal"
+mkdir -p "$OUT/lib/graphics/d3dmetal/x86_64-windows" "$OUT/lib/graphics/d3dmetal/x86_64-unix"
+cp "$d3dmetal"/wine/x86_64-windows/*.dll "$OUT/lib/graphics/d3dmetal/x86_64-windows/"
+cp "$d3dmetal"/wine/x86_64-unix/*.so "$d3dmetal/external/libd3dshared.dylib" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
+cp -R "$d3dmetal/external/D3DMetal.framework" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
+cp "$d3dmetal"/*.rtf "$OUT/lib/graphics/d3dmetal/"
 
 # The app identifies the runtime by this, see RuntimeSource.swift.
 echo "$RUNTIME_ID" > "$OUT/hadron-runtime"

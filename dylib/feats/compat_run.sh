@@ -589,12 +589,14 @@ echo "runner: build $np_build ($np_display) at $np_root" >> "$log" 2>&1 || true
 
 # Each runtime carries graphics backends under lib/graphics, beside Wine's own Direct3D,
 # and its Wine searches HADRON_DLL_OVERLAY first. HADRON_GRAPHICS in a game's launch
-# options picks dxmt (D3D10/11 on Metal, D3D8/9 on DXVK), dxvk (DXVK 3.1), dxvk1
-# (DXVK 1.10) or wined3d (Wine's own). HADRON_DDRAW=cnc-ddraw adds cnc-ddraw.
-unset HADRON_DLL_OVERLAY
+# options picks dxmt (D3D10/11 on Metal, D3D8/9 on DXVK), d3dmetal (Apple's D3D11/12,
+# D3D8/9 on DXVK), dxvk (DXVK 3.1), dxvk1 (DXVK 1.10) or wined3d (Wine's own).
+# HADRON_DDRAW=cnc-ddraw adds cnc-ddraw.
+unset HADRON_DLL_OVERLAY CX_APPLEGPTK_LIBD3DSHARED_PATH
 np_graphics="${HADRON_GRAPHICS:-dxmt}"
 case "$np_graphics" in
   dxmt) np_overlays="dxmt d9vk" ;;
+  d3dmetal) np_overlays="d3dmetal d9vk" ;;
   dxvk) np_overlays="dxvk" ;;
   dxvk1) np_overlays="dxvk1" ;;
   *) np_overlays="" ;;
@@ -608,7 +610,23 @@ for np_overlay in $np_overlays; do
   HADRON_DLL_OVERLAY="${HADRON_DLL_OVERLAY:+$HADRON_DLL_OVERLAY:}$np_dir"
 done
 [ -z "${HADRON_DLL_OVERLAY:-}" ] || export HADRON_DLL_OVERLAY
-echo "graphics: $np_graphics (${HADRON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
+# Wine loads libd3dshared early so it can mark native code for Rosetta (patch 0004).
+case ":${HADRON_DLL_OVERLAY:-}:" in
+  *"/lib/graphics/d3dmetal:"*)
+    export CX_APPLEGPTK_LIBD3DSHARED_PATH="$np_root/lib/graphics/d3dmetal/x86_64-unix/libd3dshared.dylib" ;;
+esac
+# Runtimes with the Vulkan loader pick its driver: KosmicKrisp for DXVK 3 and D3D8/9 on
+# DXVK, which need Vulkan features MoltenVK lacks, and MoltenVK otherwise. A driver set
+# in the launch options wins. A runtime without KosmicKrisp has MoltenVK only.
+np_icd="$np_root/share/vulkan/icd.d"
+if [ -z "${VK_DRIVER_FILES:-}" ] && [ -d "$np_icd" ]; then
+  np_driver=MoltenVK
+  case " $np_overlays " in
+    *" dxvk "*|*" d9vk "*) [ ! -f "$np_icd/kosmickrisp_icd.json" ] || np_driver=kosmickrisp ;;
+  esac
+  export VK_DRIVER_FILES="$np_icd/${np_driver}_icd.json"
+fi
+echo "graphics: $np_graphics (${HADRON_DLL_OVERLAY:-Wine builtin}, Vulkan ${VK_DRIVER_FILES:-direct})" >> "$log" 2>&1 || true
 
 # Each runtime build needs its own template.
 runner_id=""
@@ -1468,7 +1486,7 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|(DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|VK_DRIVER_FILES|CX_APPLEGPTK_LIBD3DSHARED_PATH|(DXMT_|DXVK_|D3DM_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"

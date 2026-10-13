@@ -41,7 +41,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 np_root="$work/runtime"
 log=/dev/null
-graphics=$(sed -n '/^unset HADRON_DLL_OVERLAY$/,/^echo "graphics:/p' "$SRC")
+graphics=$(sed -n '/^unset HADRON_DLL_OVERLAY /,/^echo "graphics:/p' "$SRC")
 # shellcheck disable=SC2016 # Match the literal launcher loop.
 forward=$(sed -n '/^for name in $(env /,/^done$/p' "$SRC")
 [ -n "$graphics" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }
@@ -52,16 +52,46 @@ mkdir -p "$np_root/lib/dxmt"
 eval "$graphics"
 is "a runtime from before lib/graphics still gets DXMT" "$np_root/lib/dxmt" "${HADRON_DLL_OVERLAY:-}"
 mkdir -p "$np_root/lib/graphics/dxmt" "$np_root/lib/graphics/d9vk" "$np_root/lib/graphics/dxvk" \
-  "$np_root/lib/graphics/dxvk1" "$np_root/lib/graphics/ddraw"
+  "$np_root/lib/graphics/dxvk1" "$np_root/lib/graphics/ddraw" "$np_root/lib/graphics/d3dmetal"
 eval "$graphics"
 is "DXMT with D3D8/9 on DXVK is the default" "$np_root/lib/graphics/dxmt:$np_root/lib/graphics/d9vk" "${HADRON_DLL_OVERLAY:-}"
 is "helpers inherit the overlay" "$np_root/lib/graphics/dxmt:$np_root/lib/graphics/d9vk" "$(sh -c 'printf %s "$HADRON_DLL_OVERLAY"')"
+mkdir -p "$np_root/share/vulkan/icd.d"
+touch "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json"
+unset VK_DRIVER_FILES
+eval "$graphics"
+is "D3D8/9 on DXVK runs on KosmicKrisp" "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json" "${VK_DRIVER_FILES:-}"
+unset VK_DRIVER_FILES
 HADRON_GRAPHICS=dxvk
 eval "$graphics"
 is "dxvk picks DXVK 3.1" "$np_root/lib/graphics/dxvk" "${HADRON_DLL_OVERLAY:-}"
+is "DXVK 3.1 runs on KosmicKrisp" "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json" "${VK_DRIVER_FILES:-}"
+unset VK_DRIVER_FILES
+HADRON_GRAPHICS=dxvk1
+eval "$graphics"
+is "DXVK 1.10 runs on MoltenVK" "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "${VK_DRIVER_FILES:-}"
+VK_DRIVER_FILES=/mine.json
+eval "$graphics"
+is "a driver from the launch options wins" "/mine.json" "${VK_DRIVER_FILES:-}"
+unset VK_DRIVER_FILES
 HADRON_GRAPHICS=dxvk1
 eval "$graphics"
 is "dxvk1 picks DXVK 1.10" "$np_root/lib/graphics/dxvk1" "${HADRON_DLL_OVERLAY:-}"
+is "only D3DMetal loads libd3dshared" "" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
+unset VK_DRIVER_FILES
+HADRON_GRAPHICS=d3dmetal
+eval "$graphics"
+is "d3dmetal picks D3DMetal with D3D8/9 on DXVK" "$np_root/lib/graphics/d3dmetal:$np_root/lib/graphics/d9vk" "${HADRON_DLL_OVERLAY:-}"
+is "D3DMetal gets libd3dshared loaded early" "$np_root/lib/graphics/d3dmetal/x86_64-unix/libd3dshared.dylib" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
+is "D3D8/9 beside D3DMetal runs on KosmicKrisp" "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json" "${VK_DRIVER_FILES:-}"
+HADRON_GRAPHICS=dxvk1
+eval "$graphics"
+is "switching away from D3DMetal drops libd3dshared" "" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
+rm "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json"
+unset VK_DRIVER_FILES
+HADRON_GRAPHICS=dxvk
+eval "$graphics"
+is "without KosmicKrisp DXVK runs on MoltenVK" "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "${VK_DRIVER_FILES:-}"
 HADRON_GRAPHICS=wined3d HADRON_DDRAW=cnc-ddraw
 eval "$graphics"
 is "wined3d leaves Wine's own Direct3D, cnc-ddraw adds itself" "$np_root/lib/graphics/ddraw" "${HADRON_DLL_OVERLAY:-}"
