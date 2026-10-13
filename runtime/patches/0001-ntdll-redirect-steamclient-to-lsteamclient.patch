@@ -1,0 +1,159 @@
+diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
+index d8b7a92..16818fc 100644
+--- a/dlls/ntdll/loader.c
++++ b/dlls/ntdll/loader.c
+@@ -2259,6 +2259,145 @@ done:
+ }
+ 
+ 
++/* NotProton: the Windows steamclient that games load cannot talk to macOS Steam.
++ * Its exports are pointed at lsteamclient, which can. */
++
++#if defined(__x86_64__) || defined(__i386__)
++
++static BOOL basename_is( const WINE_MODREF *wm, const WCHAR *name )
++{
++    return wm->ldr.BaseDllName.Buffer && !wcsicmp( wm->ldr.BaseDllName.Buffer, name );
++}
++
++static HMODULE load_lsteamclient( LPCWSTR load_path )
++{
++    UNICODE_STRING name = RTL_CONSTANT_STRING( L"lsteamclient.dll" );
++    HMODULE module;
++
++    if (!LdrGetDllHandle( load_path, 0, &name, &module )) return module;
++    if (!LdrLoadDll( load_path, 0, &name, &module )) return module;
++    return NULL;
++}
++
++static void write_jump( BYTE *code, const void *target )
++{
++#ifdef __x86_64__
++    code[0] = 0x48; code[1] = 0xb8;            /* movabs rax, target */
++    memcpy( code + 2, &target, sizeof(target) );
++    code[10] = 0xff; code[11] = 0xe0;          /* jmp rax */
++#else
++    code[0] = 0xb8;                            /* mov eax, target */
++    memcpy( code + 1, &target, sizeof(target) );
++    code[5] = 0xff; code[6] = 0xe0;            /* jmp eax */
++#endif
++}
++
++/* Every export that lsteamclient also has becomes a jump into lsteamclient. */
++static BOOL redirect_exports( HMODULE module, HMODULE lsteam )
++{
++    IMAGE_NT_HEADERS *nt = RtlImageNtHeader( module );
++    const IMAGE_EXPORT_DIRECTORY *exports;
++    const DWORD *names, *funcs;
++    const WORD *ordinals;
++    void *base = module;
++    SIZE_T size = nt->OptionalHeader.SizeOfImage;
++    ULONG old, exp_size, i;
++    ANSI_STRING name;
++    void *target;
++
++    if (!(exports = RtlImageDirectoryEntryToData( module, TRUE, IMAGE_DIRECTORY_ENTRY_EXPORT, &exp_size )))
++        return FALSE;
++    if (NtProtectVirtualMemory( NtCurrentProcess(), &base, &size, PAGE_EXECUTE_READWRITE, &old ))
++        return FALSE;
++
++    names = get_rva( module, exports->AddressOfNames );
++    funcs = get_rva( module, exports->AddressOfFunctions );
++    ordinals = get_rva( module, exports->AddressOfNameOrdinals );
++    for (i = 0; i < exports->NumberOfNames; i++)
++    {
++        RtlInitAnsiString( &name, get_rva( module, names[i] ));
++        if (LdrGetProcedureAddress( lsteam, &name, 0, &target )) continue;
++        write_jump( get_rva( module, funcs[ordinals[i]] ), target );
++    }
++    return TRUE;
++}
++
++#ifdef __i386__
++/* Relocation rewrote ImageBase in the header. 32 bit steamclient checks it against
++ * the value on disk, so put that back. */
++static void restore_image_base( HMODULE module, const UNICODE_STRING *nt_name )
++{
++    IMAGE_NT_HEADERS *nt = RtlImageNtHeader( module );
++    OBJECT_ATTRIBUTES attr;
++    IO_STATUS_BLOCK io;
++    LARGE_INTEGER offset;
++    void *base = module;
++    SIZE_T size = page_size;
++    ULONG old;
++    HANDLE file;
++
++    if (NtProtectVirtualMemory( NtCurrentProcess(), &base, &size, PAGE_READWRITE, &old )) return;
++    InitializeObjectAttributes( &attr, (UNICODE_STRING *)nt_name, OBJ_CASE_INSENSITIVE, 0, NULL );
++    if (!NtOpenFile( &file, GENERIC_READ | SYNCHRONIZE, &attr, &io, FILE_SHARE_READ | FILE_SHARE_DELETE,
++                     FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE ))
++    {
++        offset.QuadPart = (char *)&nt->OptionalHeader.ImageBase - (char *)module;
++        NtReadFile( file, 0, NULL, NULL, &io, &nt->OptionalHeader.ImageBase,
++                    sizeof(nt->OptionalHeader.ImageBase), &offset, NULL );
++        NtClose( file );
++    }
++    NtProtectVirtualMemory( NtCurrentProcess(), &base, &size, old, &old );
++}
++#endif
++
++/* Returns the load flags to continue with. */
++static DWORD redirect_steamclient( WINE_MODREF *wm, LPCWSTR load_path, const UNICODE_STRING *nt_name,
++                                   DWORD flags )
++{
++    HMODULE module = wm->ldr.DllBase, lsteam;
++#ifdef __x86_64__
++    BOOL overlay = FALSE;
++
++    if (!basename_is( wm, L"steamclient64.dll" )) return flags;
++#else
++    BOOL overlay = basename_is( wm, L"gameoverlayrenderer.dll" );
++
++    if (!overlay && !basename_is( wm, L"steamclient.dll" )) return flags;
++#endif
++    if (!(lsteam = load_lsteamclient( load_path ))) return flags;
++    if (!redirect_exports( module, lsteam )) return flags;
++    TRACE( "redirected %s to lsteamclient\n", debugstr_us(&wm->ldr.BaseDllName) );
++
++    /* lsteamclient's DllMain runs when lsteamclient loads, so the native one must not. */
++    if (overlay)
++    {
++        wm->ldr.EntryPoint = NULL;
++        return flags;
++    }
++#ifdef __x86_64__
++    if (wm->ldr.EntryPoint)
++    {
++        static const BYTE return_true[] = { 0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3 };  /* mov eax, 1; ret */
++        memcpy( wm->ldr.EntryPoint, return_true, sizeof(return_true) );
++    }
++    return flags;
++#else
++    restore_image_base( module, nt_name );
++    return flags | LDR_DONT_RESOLVE_REFS;
++#endif
++}
++
++#else
++
++static DWORD redirect_steamclient( WINE_MODREF *wm, LPCWSTR load_path, const UNICODE_STRING *nt_name,
++                                   DWORD flags )
++{
++    return flags;
++}
++
++#endif
++
++
+ /*************************************************************************
+  *		build_module
+  *
+@@ -2296,6 +2435,8 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name,
+ 
+     update_load_config( *module );
+ 
++    if (!is_builtin) flags = redirect_steamclient( wm, load_path, nt_name, flags );
++
+     /* fixup imports */
+ 
+     if (!(flags & LDR_DONT_RESOLVE_REFS) &&
