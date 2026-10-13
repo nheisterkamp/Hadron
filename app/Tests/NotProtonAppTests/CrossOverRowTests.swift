@@ -116,7 +116,7 @@ struct CrossOverRowTests {
         #expect(CrossOverRow.listing(old, in: made) == nil)
     }
 
-    @Test("An app NotProton doesn't support is listed with its version and nothing to set up")
+    @Test("An app Hadron doesn't support is listed with its version and nothing to set up")
     func unsupportedApp() {
         let old = CrossOverInstall(
             bundle: URL(filePath: "/Applications/CrossOver 24.app"), releaseVersion: "24.0.5",

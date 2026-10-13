@@ -21,7 +21,7 @@ struct CrossOverInstall: Sendable, Identifiable {
 
     var id: String { bundle.path(percentEncoded: false) }
     var name: String {
-        isRuntime ? "NotProton \(releaseVersion ?? bundle.lastPathComponent)"
+        isRuntime ? "Hadron \(releaseVersion ?? bundle.lastPathComponent)"
             : bundle.deletingPathExtension().lastPathComponent
     }
     var crossOverRoot: URL { isRuntime ? bundle : SupportPaths.crossOverRoot(inBundle: bundle) }

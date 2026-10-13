@@ -31,21 +31,21 @@ struct UninstallOutcome: Sendable {
     var partialRemoval: String? {
         guard !unreachableSteam.isEmpty else { return nil }
         return unreachableSteam.map {
-            String(localized: "NotProton has been partially removed, because Steam at \($0.path(percentEncoded: false)) cannot be found. Delete that copy of Steam and reinstall it to fully remove NotProton.")
+            String(localized: "Hadron has been partially removed, because Steam at \($0.path(percentEncoded: false)) cannot be found. Delete that copy of Steam and reinstall it to fully remove Hadron.")
         }.joined(separator: "\n\n")
     }
 }
 
 enum Uninstall {
-    static let step = String(localized: "Remove NotProton")
+    static let step = String(localized: "Remove Hadron")
 
     static func confirmation(modifications: SteamModifications = .shared) -> String {
         let missing = ((try? modifications.paths()) ?? []).filter { SupportPaths.Steam.isUnreachable($0) }
         guard !missing.isEmpty else {
-            return String(localized: "Steam is restored to its unmodified state and NotProton is removed, including the compatibility tool that lives inside the Steam folder. Windows games and Steam Play prefixes are not removed.")
+            return String(localized: "Steam is restored to its unmodified state and Hadron is removed, including the compatibility tool that lives inside the Steam folder. Windows games and Steam Play prefixes are not removed.")
         }
         return missing.map {
-            String(localized: "Steam at \($0.path(percentEncoded: false)) isn't connected, so NotProton can't be removed from it. All other NotProton data is removed, except for Windows Games and prefixes.")
+            String(localized: "Steam at \($0.path(percentEncoded: false)) isn't connected, so Hadron can't be removed from it. All other Hadron data is removed, except for Windows Games and prefixes.")
         }.joined(separator: "\n\n")
     }
 

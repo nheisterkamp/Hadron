@@ -135,10 +135,10 @@ jobs:
       - name: Package the app bundle
         run: |
           mkdir -p out/artifact
-          ditto -c -k --keepParent out/NotProton.app out/artifact/NotProton.zip
+          ditto -c -k --keepParent out/Hadron.app out/artifact/Hadron.zip
 
       - name: Upload the app bundle
         uses: actions/upload-artifact@v4
         with:
-          name: NotProton
+          name: Hadron
           path: out/artifact

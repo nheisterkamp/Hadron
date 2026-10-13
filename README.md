@@ -1,4 +1,51 @@
-# NotProton
+# Hadron
+
+Hadron runs Windows games from the macOS Steam client through Steam Play, with an
+open-source Wine runtime that it builds itself. It does not need CrossOver.
+
+Hadron is a fork of [NotProton](https://github.com/NotProtonNot/NotProton), which does
+the same with CrossOver. Nearly all of the Steam integration is NotProton's work. NotProton
+deliberately supports only CrossOver, so please report problems with Hadron here, not
+there.
+
+## What is different from NotProton
+
+- **The runtime.** `runtime/build-wine.sh` builds an x86_64 Wine 11.15 that runs under
+  Rosetta, with lsteamclient, the steam.exe shim, wine-mono and wine-gecko built in.
+  NotProton patches a copy of CrossOver's binaries instead. Hadron makes the same changes
+  in Wine's source (`runtime/patches`), so there are no per-build hashes to pin.
+- **Graphics.** Direct3D 10/11 goes to Metal through [DXMT](https://github.com/3Shain/dxmt).
+  Vulkan comes from MoltenVK. To use Wine's own Direct3D for one game instead, put
+  `NOTPROTON_GRAPHICS=wined3d %command%` in that game's launch options.
+- **No license check.** The runtime is free software. CrossOver copies are still supported
+  and still need a valid CrossOver license.
+
+## Status
+
+Early. The runtime boots, the steamclient redirect works for 32 and 64 bit games, and DXMT
+creates Direct3D 11 devices. Not yet done:
+
+- an arm64 (FEX) runtime. The runtime is Rosetta only.
+- D3DMetal, Apple's Direct3D 12 translation layer. It cannot be redistributed.
+- TLS (schannel) inside Wine, which needs an x86_64 GnuTLS.
+- automatic updates. They are switched off until Hadron publishes signed releases.
+
+## Building the runtime
+
+```
+brew install mingw-w64 bison flex autoconf cmake ninja
+bridge/setup-wine-tree.sh
+runtime/build-wine.sh
+```
+
+Add the result, `out/runtime/wine-11.15`, with "Add CrossOver or Wine…", or put it in
+`~/Library/Application Support/notproton/runtimes/`.
+
+## NotProton's notes
+
+The rest of this file is NotProton's README. It still applies to CrossOver copies.
+
+### NotProton
 
 NotProton enables the Steam Play experience from Linux Steam in the macOS Steam client.
 
@@ -44,3 +91,5 @@ As far as the source structure goes, the macOS app itself is located in the ```a
 steam-helper from Proton 9.0. ntdll-patch patches the copy of CrossOver that the app
 makes/places in the ```~/Library/Application Support/notproton/runners/``` folder so that
 lsteamclient is loaded.
+
+Hadron adds `runtime`: the Wine runtime build, its patches and its tests.

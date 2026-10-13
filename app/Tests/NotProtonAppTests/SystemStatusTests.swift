@@ -596,7 +596,7 @@ struct SteamChoiceTests {
         #expect(SystemStatus.steamChoiceRefusal(picked, current: SupportPaths.Steam.defaultApp, insert: nil) != nil)
     }
 
-    @Test("Switching is refused while NotProton is installed in the current copy")
+    @Test("Switching is refused while Hadron is installed in the current copy")
     func refusesWhilePatched() throws {
         let root = try scratchDirectory("steam-choice")
         defer { try? FileManager.default.removeItem(at: root) }

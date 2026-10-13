@@ -169,7 +169,7 @@ struct SteamRepairTests {
 
     // MARK: - The inner plist
 
-    @Test("Clearing the insert removes the keys NotProton added and nothing else")
+    @Test("Clearing the insert removes the keys Hadron added and nothing else")
     func clearsOnlyTheInsert() throws {
         let work = try scratchDirectory("repair")
         defer { try? FileManager.default.removeItem(at: work) }

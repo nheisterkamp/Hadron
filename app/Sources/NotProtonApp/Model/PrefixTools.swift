@@ -283,7 +283,7 @@ enum PrefixTools {
         // Under -q annihilate wipes the prefix and its saves without asking, prefix= switches to
         // another prefix, and options like --self-update change winetricks itself.
         if let refused = verbs.first(where: { $0 == "annihilate" || $0.hasPrefix("prefix=") || $0.hasPrefix("-") }) {
-            throw StepFailure(step: step, detail: String(localized: "NotProton does not run \(refused) with Winetricks."))
+            throw StepFailure(step: step, detail: String(localized: "Hadron does not run \(refused) with Winetricks."))
         }
         guard !PrefixStore.isInUse(prefix) else {
             throw StepFailure(step: step, detail: String(localized: "\(prefix.title) is running. Quit the game first."))

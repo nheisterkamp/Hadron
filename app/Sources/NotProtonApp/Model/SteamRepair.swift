@@ -61,7 +61,7 @@ enum SteamRepair {
         guard let bundle = manifest.bundle else {
             throw StepFailure(
                 step: step,
-                detail: String(localized: "This copy of NotProton cannot repair Steam. Please reinstall NotProton.")
+                detail: String(localized: "This copy of Hadron cannot repair Steam. Please reinstall Hadron.")
             )
         }
 

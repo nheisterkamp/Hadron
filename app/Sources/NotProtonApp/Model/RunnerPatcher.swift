@@ -130,7 +130,7 @@ enum RunnerPatcher {
             guard FileManager.default.fileExists(atPath: source.path(percentEncoded: false)) else {
                 throw StepFailure(
                     step: step,
-                    detail: String(localized: "\(builtin.arch)/\(builtin.name) is not in the bridge. Install NotProton first.")
+                    detail: String(localized: "\(builtin.arch)/\(builtin.name) is not in the bridge. Install Hadron first.")
                 )
             }
 

@@ -293,7 +293,7 @@ struct UninstallTests {
         #expect(!FileManager.default.fileExists(atPath: layout.support.path(percentEncoded: false)))
     }
 
-    @Test("An unplugged Steam that NotProton was never installed into is not reported")
+    @Test("An unplugged Steam that Hadron was never installed into is not reported")
     func ignoresAnUnpluggedSteamWithoutNotProton() async throws {
         let layout = try layout()
         defer { try? FileManager.default.removeItem(at: layout.root) }

@@ -49,7 +49,7 @@ struct WineRuntimeTests {
         #expect(install.isRuntime)
         #expect(install.isUsable)
         #expect(install.crossOverRoot == root)
-        #expect(install.name == "NotProton Wine 11.15")
+        #expect(install.name == "Hadron Wine 11.15")
     }
 
     @Test("A runtime with an unknown id is listed as unsupported")

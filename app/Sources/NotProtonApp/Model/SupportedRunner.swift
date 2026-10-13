@@ -255,7 +255,7 @@ enum SupportedRunners {
             cleanNtdll: [:],
             patchedNtdll: [:],
             tools: [
-                CompatTool(name: "notproton-wine", flavor: .rosetta, display: "NotProton Wine 11.15"),
+                CompatTool(name: "notproton-wine", flavor: .rosetta, display: "Hadron Wine 11.15"),
             ],
             source: .runtime
         ),

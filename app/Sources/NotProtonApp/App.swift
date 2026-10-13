@@ -14,7 +14,7 @@ struct NotProtonApp: App {
     }
 
     var body: some Scene {
-        Window("NotProton", id: "main") {
+        Window("Hadron", id: "main") {
             RootView(pane: $pane)
                 .environment(status)
                 .environment(prefixes)
@@ -34,6 +34,7 @@ struct NotProtonApp: App {
 
         CommandGroup(after: .appInfo) {
             Button("Check for Updates…") { updater.check() }
+                .disabled(!AppUpdater.isConfigured)
         }
 
         CommandGroup(after: .sidebar) {
