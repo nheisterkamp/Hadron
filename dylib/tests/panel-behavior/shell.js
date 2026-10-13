@@ -13,10 +13,13 @@ const TOGGLES = {
   'High Resolution': 'HADRON_RETINA',
   'Advertise AVX2 to Rosetta': 'ROSETTA_ADVERTISE_AVX',
   'Let games read controllers directly': 'HADRON_RAW_CONTROLLERS',
+  'cnc-ddraw (old DirectDraw games)': 'HADRON_DDRAW',
 };
+// The value a toggle writes when on, where it is not 1.
+const ON = { HADRON_DDRAW: 'cnc-ddraw' };
 const PANEL_KEYS = ['HADRON_GRAPHICS', 'MTL_HUD_ENABLED', 'DXMT_ENABLE_NVEXT',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'HADRON_RETINA',
-  'HADRON_RAW_CONTROLLERS'];
+  'HADRON_RAW_CONTROLLERS', 'HADRON_DDRAW'];
 const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO'];
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'np-shell-'));
@@ -91,7 +94,7 @@ function agrees(t, v, env, what) {
          `${what}: upscale shows "${got}", DXMT uses ${want}`);
   }
   for (const [key, node] of Object.entries(v.toggles))
-    t.ok(node.props.checked === (env[key] === '1'), `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
+    t.ok(node.props.checked === (env[key] === (ON[key] || '1')), `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
   t.ok(v.backend.props.selectedOption === (env.HADRON_GRAPHICS || 'dxmt'),
        `${what}: graphics shows "${v.backend.props.selectedOption}", game gets ${env.HADRON_GRAPHICS}`);
 }
@@ -99,6 +102,12 @@ function agrees(t, v, env, what) {
 const ACTIONS = [
   { name: 'Metal HUD', run: v => v.toggles.MTL_HUD_ENABLED.props.onChange(!v.toggles.MTL_HUD_ENABLED.props.checked),
     want: (v0, v1) => v1.toggles.MTL_HUD_ENABLED.props.checked === !v0.toggles.MTL_HUD_ENABLED.props.checked },
+  { name: 'cnc-ddraw', run: v => v.toggles.HADRON_DDRAW.props.onChange(!v.toggles.HADRON_DDRAW.props.checked),
+    want: (v0, v1) => v1.toggles.HADRON_DDRAW.props.checked === !v0.toggles.HADRON_DDRAW.props.checked },
+  { name: 'graphics d3dmetal', run: v => v.backend.props.onChange({ data: 'd3dmetal' }),
+    want: (v0, v1) => v1.backend.props.selectedOption === 'd3dmetal' },
+  { name: 'graphics dxvk1', run: v => v.backend.props.onChange({ data: 'dxvk1' }),
+    want: (v0, v1) => v1.backend.props.selectedOption === 'dxvk1' },
   { name: 'High Resolution', run: v => v.toggles.HADRON_RETINA.props.onChange(!v.toggles.HADRON_RETINA.props.checked),
     want: (v0, v1) => v1.toggles.HADRON_RETINA.props.checked === !v0.toggles.HADRON_RETINA.props.checked },
   { name: 'raw controllers', run: v => v.toggles.HADRON_RAW_CONTROLLERS.props.onChange(!v.toggles.HADRON_RAW_CONTROLLERS.props.checked),
@@ -128,6 +137,9 @@ const CASES = [
   '%command%',
   '%command% --offline',
   'MTL_HUD_ENABLED=1 %command%',
+  'HADRON_DDRAW=cnc-ddraw HADRON_GRAPHICS=dxvk %command% --offline',
+  "HADRON_DDRAW='cnc-ddraw' HADRON_GRAPHICS=d3dmetal %command%",
+  'HADRON_DDRAW=other %command%',
   'MTL_HUD_ENABLED="1" %command% --offline',
   "MTL_HUD_ENABLED='1' HADRON_RETINA=0 %command%",
   'MTL_HUD_ENABLED=1 %COMMAND%',

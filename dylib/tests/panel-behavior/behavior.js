@@ -21,7 +21,7 @@ for (const form of Object.keys(FORMS)) {
        'a shortcut renders the panel before a tool name reaches the page');
 
   let r = nodes('');
-  t.ok(toggles(r).length === 5 && sections(r).length === 3, 'the default shows five toggles in three sections');
+  t.ok(toggles(r).length === 6 && sections(r).length === 3, 'the default shows six toggles in three sections');
   t.ok(!toggles(r).includes('MSync'), 'there is no MSync row, Wine 11.15 has no msync');
   t.ok(r.filter(x => x.type === 'Dropdown').length === 2, 'two dropdowns');
   t.ok(!('label' in r.find(x => x.type === 'Dropdown').props), 'the graphics dropdown carries no label column');
@@ -32,9 +32,12 @@ for (const form of Object.keys(FORMS)) {
     t.ok(toggles(r).filter(l => l === 'DLSS').length === 1 && sections(r).includes('MetalFX'),
          `${JSON.stringify(o)} keeps DLSS and MetalFX`);
   }
-  r = nodes('HADRON_GRAPHICS=wined3d');
-  t.ok(!toggles(r).includes('DLSS') && !sections(r).includes('MetalFX') && toggles(r).length === 4,
-       'wined3d hides DLSS and MetalFX, keeps the rest');
+  for (const b of ['d3dmetal', 'dxvk', 'dxvk1', 'wined3d']) {
+    r = nodes('HADRON_GRAPHICS=' + b);
+    t.ok(!toggles(r).includes('DLSS') && !sections(r).includes('MetalFX') && toggles(r).length === 5,
+         `${b} hides DLSS and MetalFX, keeps the rest`);
+    t.ok(r.find(x => x.type === 'Dropdown').props.selectedOption === b, `${b} reads as itself`);
+  }
   // The run script overlays DXMT only for dxmt, so anything else is not DXMT either.
   r = nodes('HADRON_GRAPHICS=other');
   t.ok(!toggles(r).includes('DLSS') && !sections(r).includes('MetalFX'),
@@ -56,6 +59,23 @@ for (const form of Object.keys(FORMS)) {
   written.length = 0;
   nodes('HADRON_GRAPHICS=wined3d').find(x => x.type === 'Dropdown').props.onChange({ data: 'dxmt' });
   t.ok(last() === '', `picking DXMT clears the variable, it is the default (${last()})`);
+  for (const b of ['d3dmetal', 'dxvk', 'dxvk1']) {
+    written.length = 0;
+    nodes('DXMT_ENABLE_NVEXT=1').find(x => x.type === 'Dropdown').props.onChange({ data: b });
+    t.ok(last().trim() === `HADRON_GRAPHICS=${b} %command%`, `picking ${b} writes it and drops DXMT's DLSS (${last()})`);
+  }
+
+  const ddraw = o => nodes(o).find(x => x.props.label === 'cnc-ddraw (old DirectDraw games)');
+  t.ok(ddraw('').props.checked === false, 'cnc-ddraw is off unless the game says otherwise');
+  t.ok(ddraw('HADRON_DDRAW=cnc-ddraw').props.checked === true, 'cnc-ddraw reads its value');
+  t.ok(ddraw('HADRON_DDRAW=1').props.checked === false, 'only cnc-ddraw turns the row on');
+  t.ok(ddraw('HADRON_GRAPHICS=wined3d') !== undefined, 'cnc-ddraw is offered with every backend');
+  written.length = 0;
+  ddraw('').props.onChange(true);
+  t.ok(last().trim() === 'HADRON_DDRAW=cnc-ddraw %command%', `turning cnc-ddraw on writes it (${last()})`);
+  written.length = 0;
+  ddraw('HADRON_DDRAW=cnc-ddraw WINEDEBUG=-all').props.onChange(false);
+  t.ok(last().trim() === 'WINEDEBUG=-all %command%', `turning cnc-ddraw off removes it (${last()})`);
 
   t.ok(nodes('MTL_HUD_ENABLED=1').find(x => x.props.label === 'Metal HUD').props.checked === true,
        'a toggle reads as on from its argument');
@@ -75,14 +95,14 @@ for (const form of Object.keys(FORMS)) {
 
   // The value is what the run script reads from HADRON_GRAPHICS.
   const choices = nodes('').find(x => x.type === 'Dropdown').props.rgOptions;
-  t.ok(choices.map(o => o.label).join(',') === "DXMT,WineD3D (Wine's own Direct3D)",
+  t.ok(choices.map(o => o.label).join(',') === "DXMT (Metal),D3DMetal (Apple),DXVK 3.1,DXVK 1.10,WineD3D (Wine's own)",
        `the choices name themselves (${choices.map(o => o.label).join(',')})`);
-  t.ok(choices.map(o => o.data).join(',') === 'dxmt,wined3d', 'the values stay as the run script reads them');
+  t.ok(choices.map(o => o.data).join(',') === 'dxmt,d3dmetal,dxvk,dxvk1,wined3d', 'the values stay as the run script reads them');
 
   const root = P({ details: details('') });
   t.ok(root.props.className === 'NPHadronPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
-  t.ok(classes.length === 5 && classes.every(c => c === 'NPHadronRow'), 'every checkbox carries the row class');
+  t.ok(classes.length === 6 && classes.every(c => c === 'NPHadronRow'), 'every checkbox carries the row class');
   const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');

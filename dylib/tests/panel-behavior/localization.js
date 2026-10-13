@@ -17,11 +17,14 @@ for (const form of Object.keys(FORMS)) {
       const { render, written } = panel(emit, form, globals);
       const nodes = walk(render({ details: details('HADRON_GRAPHICS=dxmt %command%') }));
       const dropdowns = nodes.filter(n => n.type === 'Dropdown');
-      assert.equal(dropdowns[0].props.rgOptions[1].label,
-        chinese ? 'WineD3D（Wine 自带的 Direct3D）' : "WineD3D (Wine's own Direct3D)");
+      assert.deepEqual(dropdowns[0].props.rgOptions.map(o => o.label), chinese
+        ? ['DXMT（Metal）', 'D3DMetal（Apple）', 'DXVK 3.1', 'DXVK 1.10', 'WineD3D（Wine 自带）']
+        : ['DXMT (Metal)', 'D3DMetal (Apple)', 'DXVK 3.1', 'DXVK 1.10', "WineD3D (Wine's own)"]);
+      assert(nodes.some(n => n.type === 'Toggle' && n.props.label === (chinese
+        ? 'cnc-ddraw（旧版 DirectDraw 游戏）' : 'cnc-ddraw (old DirectDraw games)')));
       assert.equal(dropdowns[1].props.rgOptions[0].label, chinese ? '关闭' : 'Off');
       assert.deepEqual(dropdowns[0].props.rgOptions.map(o => o.data),
-        ['dxmt', 'wined3d']);
+        ['dxmt', 'd3dmetal', 'dxvk', 'dxvk1', 'wined3d']);
       assert(nodes.some(n => n.props.label === (chinese ? '图形' : 'Graphics')));
       assert(nodes.some(n => n.props.label === (chinese
         ? '控制器（可能导致 Steam Input 失效，不推荐）'

@@ -194,8 +194,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     ".NPHadronPanel .NPHadronRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
     ".NPNoBottomGap{margin-bottom:0}\""
 
-// HADRON_GRAPHICS picks the D3D10/11 path: unset or dxmt is DXMT on Metal, wined3d
-// is Wine's own Direct3D. The DXMT rows go with DXMT, so leaving it clears them.
+// HADRON_GRAPHICS picks the Direct3D backend, unset is dxmt. The DXMT rows go with
+// DXMT, so leaving it clears them. HADRON_DDRAW adds cnc-ddraw for DirectDraw games.
 #define NP_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
@@ -227,8 +227,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
-    "B=[{data:\"dxmt\",label:\"DXMT\"}," \
-    "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own Direct3D)\",\"WineD3D（Wine 自带的 Direct3D）\")}];" \
+    "B=[{data:\"dxmt\",label:npL(\"DXMT (Metal)\",\"DXMT（Metal）\")}," \
+    "{data:\"d3dmetal\",label:npL(\"D3DMetal (Apple)\",\"D3DMetal（Apple）\")}," \
+    "{data:\"dxvk\",label:\"DXVK 3.1\"}," \
+    "{data:\"dxvk1\",label:\"DXVK 1.10\"}," \
+    "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own)\",\"WineD3D（Wine 自带）\")}];" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"NPHadronPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
@@ -241,7 +244,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\"),\"1\")," \
     "dx&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
     "T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
-    "T([\"HADRON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")" \
+    "T([\"HADRON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")," \
+    "T([\"HADRON_DDRAW\"],npL(\"cnc-ddraw (old DirectDraw games)\",\"cnc-ddraw（旧版 DirectDraw 游戏）\"),\"cnc-ddraw\")" \
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \

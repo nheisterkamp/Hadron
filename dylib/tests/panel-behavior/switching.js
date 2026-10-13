@@ -21,6 +21,15 @@ const CASES = [
   // DXMT is the default, so picking it leaves no variable behind.
   { to: 'dxmt',    from: 'HADRON_GRAPHICS=dxmt ' + UPSCALED, gone: ['HADRON_GRAPHICS'], kept: DXMT },
   { to: 'wined3d', from: 'HADRON_GRAPHICS=wined3d', gone: [], kept: ['HADRON_GRAPHICS=wined3d'] },
+  { to: 'd3dmetal', from: UPSCALED, gone: DXMT, kept: ['HADRON_GRAPHICS=d3dmetal'] },
+  { to: 'dxvk',     from: UPSCALED, gone: DXMT, kept: ['HADRON_GRAPHICS=dxvk'] },
+  { to: 'dxvk1',    from: UPSCALED, gone: DXMT, kept: ['HADRON_GRAPHICS=dxvk1'] },
+  { to: 'dxvk1',    from: 'HADRON_GRAPHICS=dxvk', gone: [], kept: ['HADRON_GRAPHICS=dxvk1'] },
+  { to: 'dxmt',     from: 'HADRON_GRAPHICS=d3dmetal', gone: ['HADRON_GRAPHICS'], kept: [] },
+  // cnc-ddraw is its own row and works with every backend, so no switch takes it along.
+  { to: 'dxvk',     from: 'HADRON_DDRAW=cnc-ddraw ' + UPSCALED, gone: DXMT, kept: ['HADRON_DDRAW=cnc-ddraw'] },
+  { to: 'dxmt',     from: 'HADRON_DDRAW=cnc-ddraw HADRON_GRAPHICS=wined3d', gone: ['HADRON_GRAPHICS'],
+    kept: ['HADRON_DDRAW=cnc-ddraw'] },
   // Stripping arguments by name is the kind of thing that takes neighbours with it.
   { to: 'wined3d',
     from: 'MTL_HUD_ENABLED=1 WINEDEBUG=-all HADRON_RETINA=1 ' + UPSCALED + ' %command% -novid',
