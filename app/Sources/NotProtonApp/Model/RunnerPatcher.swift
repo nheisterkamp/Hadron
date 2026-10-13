@@ -42,6 +42,9 @@ enum RunnerPatcher {
     ) throws -> Outcome {
         var outcome = Outcome()
         outcome.ntdll = try installNtdll(build: build, root: root, bridge: bridge)
+        // A runtime ships its own lsteamclient, and its unsigned loader already honors
+        // DYLD_INSERT_LIBRARIES.
+        guard build.source == .crossOver else { return outcome }
         outcome.builtins = try installBuiltins(root: root, bridge: bridge)
         outcome.loaders = try grantLoaderEntitlement(root: root)
         return outcome
@@ -69,6 +72,7 @@ enum RunnerPatcher {
                 wrong.append(String(localized: "\(builtin.arch)/\(builtin.name) is missing"))
                 continue
             }
+            guard build.source == .crossOver else { continue }
 
             let staged = Digest.sha256IfPresent(
                 bridge.appending(path: "\(builtin.arch)/\(builtin.name)"))
@@ -77,7 +81,7 @@ enum RunnerPatcher {
             }
         }
 
-        for loader in unixLoaders(in: root) {
+        for loader in unixLoaders(in: root) where build.source == .crossOver {
             let granted = entitlements(of: loader)
             if granted?.contains(restrictedEntitlement) == true {
                 if !signatureIsValid(signingTarget(for: loader)) {

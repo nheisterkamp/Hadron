@@ -172,7 +172,7 @@ enum DeploymentContent {
             File(source: payload.run, destination: compatTools.appending(path: "\($0.name)/run"),
                  name: "\($0.name)/run", executable: true)
         }
-        for build in Set(tools.map(\.build)).sorted() {
+        for build in Set(tools.map(\.build)).sorted() where SupportedRunners.build(id: build)?.source != .runtime {
             let root = SupportPaths.clonedRoot(forBuild: build, runners: runners)
             for builtin in RunnerPatcher.builtins(in: root) {
                 let path = "\(builtin.arch)/\(builtin.name)"

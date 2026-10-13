@@ -47,6 +47,14 @@ enum CrossOverLicense {
         searchDirs: [URL],
         openssl: String
     ) -> Status {
+        if WineRuntime.isRuntime(crossOverRoot) {
+            return Status(
+                licensed: true,
+                detail: String(localized: "This Wine runtime needs no license."),
+                diagnostic: "self-built Wine runtime, no CrossOver license applies"
+            )
+        }
+
         let keyFile = crossOverRoot.appending(
             path: "share/crossover/data/tie.pub"
         ).path(percentEncoded: false)

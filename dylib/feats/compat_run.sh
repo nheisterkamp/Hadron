@@ -1063,7 +1063,8 @@ fi
 bridge_src="$np_support/bridge"
 prefix_steam="$WINEPREFIX/drive_c/Program Files (x86)/Steam"
 verify_runner() {
-  if [ ! -d "$bridge_src/wine/$np_build" ]; then
+  # A self-built runtime is patched in source, so there is no bridge copy to compare.
+  if [ ! -d "$bridge_src/wine/$np_build" ] && [ ! -f "$CX_ROOT/notproton-runtime" ]; then
     echo "=== no patched ntdll for build $np_build in the bridge, set it up in NotProton ===" >> "$log" 2>&1 || true
     return
   fi

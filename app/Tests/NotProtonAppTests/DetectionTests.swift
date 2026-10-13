@@ -16,6 +16,11 @@ struct SupportedRunnerTests {
             build.rebuilds.compactMap { build.matching(loaderSHA256: $0.loaderSHA256) }
         }
         for build in SupportedRunners.all + rebuilt {
+            // A runtime is patched in source and identified by its marker file.
+            if build.source == .runtime {
+                #expect(build.loaderSHA256.isEmpty && build.cleanNtdll.isEmpty && build.patchedNtdll.isEmpty)
+                continue
+            }
             expectSHA256(build.loaderSHA256, "loader for \(build.id)")
             #expect(!build.cleanNtdll.isEmpty, "\(build.id) patches nothing")
             #expect(Set(build.cleanNtdll.keys) == Set(build.patchedNtdll.keys), "\(build.id) is lopsided")

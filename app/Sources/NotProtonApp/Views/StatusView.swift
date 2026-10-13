@@ -348,7 +348,7 @@ struct StatusView: View {
             } footer: {
                 HStack {
                     Spacer()
-                    Button("Add CrossOver\u{2026}") { Task { await status.addCrossOver() } }
+                    Button("Add CrossOver or Wine\u{2026}") { Task { await status.addCrossOver() } }
                         .disabled(!status.isIdle)
                         .help("Add a copy of CrossOver from another folder.")
                 }

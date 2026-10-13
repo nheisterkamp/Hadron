@@ -271,6 +271,17 @@ enum RunnerInstaller {
     }
 
     static func verifyClone(build: RunnerBuild, root: URL) throws {
+        if build.source == .runtime {
+            guard WineRuntime.build(atRoot: root)?.id == build.id else {
+                throw StepFailure(step: step, detail: String(localized: "The copy at \(root.path(percentEncoded: false)) is not Wine runtime \(build.id)."))
+            }
+            guard FileManager.default.isExecutableFile(
+                atPath: CrossOverSource.unixLoader(inRoot: root).path(percentEncoded: false)
+            ) else {
+                throw StepFailure(step: step, detail: String(localized: "The copy has no Wine loader at x86_64-unix/wine."))
+            }
+            return
+        }
         let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
         guard let hash = Digest.sha256IfPresent(loader) else {
             throw StepFailure(step: step, detail: String(localized: "The clone has no Wine loader at \(loader.lastPathComponent)."))

@@ -11,6 +11,12 @@ enum WineArch: String, Sendable, CaseIterable {
     case aarch64Windows = "aarch64-windows"
 }
 
+enum RunnerSource: Sendable, Equatable {
+    case crossOver
+    // Built from source by runtime/build-wine.sh. See WineRuntime.
+    case runtime
+}
+
 struct RunnerBuild: Sendable, Equatable, Identifiable {
     // CFBundleVersion, which also names the directory under runners/ and keys
     // the ntdll hash tables. Changing it orphans an installed runner.
@@ -32,6 +38,8 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
 
     var rebuilds: [RunnerRebuild] = []
 
+    var source: RunnerSource = .crossOver
+
     var id: String { flavor.map { "\(bundleVersion)-\($0)" } ?? bundleVersion }
 
     func matching(loaderSHA256 hash: String) -> RunnerBuild? {
@@ -40,7 +48,7 @@ struct RunnerBuild: Sendable, Equatable, Identifiable {
         return RunnerBuild(
             bundleVersion: bundleVersion, releaseVersion: releaseVersion, flavor: flavor,
             loaderSHA256: rebuild.loaderSHA256, cleanNtdll: rebuild.cleanNtdll,
-            patchedNtdll: rebuild.patchedNtdll, tools: tools, rebuilds: rebuilds
+            patchedNtdll: rebuild.patchedNtdll, tools: tools, rebuilds: rebuilds, source: source
         )
     }
 
@@ -92,7 +100,7 @@ enum SupportedRunners {
 
     // First entry is what windows-only games get when Steam has no mapping.
     static let toolPreference = [
-        legacyToolName, "notproton-fex", "notproton-fex-rosetta", "notproton-preview",
+        legacyToolName, "notproton-wine", "notproton-fex", "notproton-fex-rosetta", "notproton-preview",
         "notproton-fex-41069", "notproton-fex-rosetta-41069", "notproton-preview-41069", "notproton-26.3",
     ]
 
@@ -237,10 +245,24 @@ enum SupportedRunners {
                 CompatTool(name: "notproton-fex-rosetta-41069", flavor: .rosetta, display: "CrossOver 2026 10 06-ARM64 - Rosetta"),
             ]
         ),
+        // Identified by its marker file, not by hashes. A self-built loader changes with
+        // every build, and its ntdll is patched in source.
+        RunnerBuild(
+            bundleVersion: "wine-11.15",
+            releaseVersion: "Wine 11.15",
+            flavor: nil,
+            loaderSHA256: "",
+            cleanNtdll: [:],
+            patchedNtdll: [:],
+            tools: [
+                CompatTool(name: "notproton-wine", flavor: .rosetta, display: "NotProton Wine 11.15"),
+            ],
+            source: .runtime
+        ),
     ]
 
     static func build(loaderSHA256 hash: String) -> RunnerBuild? {
-        all.lazy.compactMap { $0.matching(loaderSHA256: hash) }.first
+        all.lazy.filter { $0.source == .crossOver }.compactMap { $0.matching(loaderSHA256: hash) }.first
     }
 
     static func build(id: String) -> RunnerBuild? {

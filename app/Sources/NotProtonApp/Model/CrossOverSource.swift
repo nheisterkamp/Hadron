@@ -16,9 +16,15 @@ struct CrossOverInstall: Sendable, Identifiable {
     // Selected by the user rather than found on disk by tool.
     var isManual = false
 
+    // A WineRuntime folder rather than a CrossOver app. The folder is the root itself.
+    var isRuntime = false
+
     var id: String { bundle.path(percentEncoded: false) }
-    var name: String { bundle.deletingPathExtension().lastPathComponent }
-    var crossOverRoot: URL { SupportPaths.crossOverRoot(inBundle: bundle) }
+    var name: String {
+        isRuntime ? "NotProton \(releaseVersion ?? bundle.lastPathComponent)"
+            : bundle.deletingPathExtension().lastPathComponent
+    }
+    var crossOverRoot: URL { isRuntime ? bundle : SupportPaths.crossOverRoot(inBundle: bundle) }
 
     var isPreview: Bool { name.localizedCaseInsensitiveContains("Preview") }
 
@@ -71,10 +77,16 @@ enum CrossOverSource {
 
     // A CrossOver bundle without this directory is bad!
     static func looksLikeCrossOver(_ bundle: URL) -> Bool {
+        if WineRuntime.isRuntime(bundle) { return true }
         let root = SupportPaths.crossOverRoot(inBundle: bundle)
         return FileManager.default.fileExists(
             atPath: root.appending(path: "lib/wine").path(percentEncoded: false)
         )
+    }
+
+    // Runtimes are folders, found here or added by hand.
+    static var runtimeRoot: URL {
+        SupportPaths.applicationSupport.appending(path: "runtimes", directoryHint: .isDirectory)
     }
 
     static func discover() -> [CrossOverInstall] {
@@ -99,6 +111,9 @@ enum CrossOverSource {
             }
         }
 
+        let runtimes = (try? fm.contentsOfDirectory(at: runtimeRoot, includingPropertiesForKeys: nil)) ?? []
+        for entry in runtimes where WineRuntime.isRuntime(entry) { consider(entry, isManual: false) }
+
         return found.sorted(by: preferred)
     }
 
@@ -111,6 +126,18 @@ enum CrossOverSource {
     }
 
     static func inspect(bundle: URL, isManual: Bool = false) -> CrossOverInstall {
+        if let id = WineRuntime.id(atRoot: bundle) {
+            guard let build = WineRuntime.build(atRoot: bundle) else {
+                return CrossOverInstall(
+                    bundle: bundle, releaseVersion: id, support: .unsupportedBuild(id),
+                    isManual: isManual, isRuntime: true
+                )
+            }
+            return CrossOverInstall(
+                bundle: bundle, releaseVersion: build.releaseVersion, support: .supported(build),
+                isManual: isManual, isRuntime: true
+            )
+        }
         guard let version = releaseVersion(of: bundle) else {
             return CrossOverInstall(bundle: bundle, releaseVersion: nil, support: .unreadable, isManual: isManual)
         }

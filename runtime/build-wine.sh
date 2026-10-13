@@ -103,4 +103,7 @@ cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/x86_64-unix/"
 # compat_run.sh finds the loader where CrossOver keeps it.
 [ -e "$OUT/lib/wine/x86_64-unix/wine" ] || cp "$OUT/bin/wine" "$OUT/lib/wine/x86_64-unix/wine"
 
+# The app identifies the runtime by this, see WineRuntime.swift.
+echo "wine-$WINE_VERSION" > "$OUT/notproton-runtime"
+
 echo "==> done: $OUT"

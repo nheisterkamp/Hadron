@@ -255,11 +255,12 @@ final class SystemStatus {
     func addCrossOver() async {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        // Folders too, for a Wine runtime built by runtime/build-wine.sh.
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.application]
+        panel.allowedContentTypes = [.application, .folder]
         panel.prompt = String(localized: "Add")
-        panel.message = String(localized: "Select a copy of CrossOver.")
+        panel.message = String(localized: "Select a copy of CrossOver or a NotProton Wine runtime folder.")
         panel.directoryURL = URL(filePath: "/Applications", directoryHint: .isDirectory)
 
         guard panel.runModal() == .OK, let picked = panel.url else { return }
@@ -268,7 +269,7 @@ final class SystemStatus {
         outcome = nil
 
         guard CrossOverSource.looksLikeCrossOver(picked) else {
-            setFailure(String(localized: "\(picked.lastPathComponent) is not a valid copy of CrossOver."))
+            setFailure(String(localized: "\(picked.lastPathComponent) is not a valid copy of CrossOver or a Wine runtime."))
             AppLog.note("crossOver choice refused: \(picked.path(percentEncoded: false))")
             return
         }
