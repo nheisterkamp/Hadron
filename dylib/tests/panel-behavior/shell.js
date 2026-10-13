@@ -10,13 +10,12 @@ if (!emit) { console.error('usage: shell.js <emit>'); process.exit(2); }
 
 const TOGGLES = {
   'Metal HUD': 'MTL_HUD_ENABLED',
-  'MSync': 'WINEMSYNC',
   'High Resolution': 'NOTPROTON_RETINA',
   'Advertise AVX2 to Rosetta': 'ROSETTA_ADVERTISE_AVX',
   'Let games read controllers directly': 'NOTPROTON_RAW_CONTROLLERS',
 };
-const PANEL_KEYS = ['CX_GRAPHICS_BACKEND', 'MTL_HUD_ENABLED', 'D3DM_ENABLE_METALFX', 'DXMT_ENABLE_NVEXT',
-  'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'WINEMSYNC', 'NOTPROTON_RETINA',
+const PANEL_KEYS = ['NOTPROTON_GRAPHICS', 'MTL_HUD_ENABLED', 'DXMT_ENABLE_NVEXT',
+  'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'NOTPROTON_RETINA',
   'NOTPROTON_RAW_CONTROLLERS'];
 const OTHER_KEYS = ['WINEDEBUG', 'DXVK_HUD', 'FOO'];
 
@@ -55,7 +54,7 @@ function view(form, options) {
   const toggles = {};
   nodes.filter(n => n.type === 'Toggle' && n.props.label in TOGGLES)
        .forEach(n => { toggles[TOGGLES[n.props.label]] = n; });
-  const backend = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === 'dxvk'));
+  const backend = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === 'wined3d'));
   const upscale = nodes.find(n => n.type === 'Dropdown' && n.props.rgOptions.some(o => o.data === '1.5'));
   return { toggles, backend, upscale, written: P.written };
 }
@@ -93,21 +92,21 @@ function agrees(t, v, env, what) {
   }
   for (const [key, node] of Object.entries(v.toggles))
     t.ok(node.props.checked === (env[key] === '1'), `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
-  t.ok(v.backend.props.selectedOption === (env.CX_GRAPHICS_BACKEND || ''),
-       `${what}: backend shows "${v.backend.props.selectedOption}", game gets ${env.CX_GRAPHICS_BACKEND}`);
+  t.ok(v.backend.props.selectedOption === (env.NOTPROTON_GRAPHICS || 'dxmt'),
+       `${what}: graphics shows "${v.backend.props.selectedOption}", game gets ${env.NOTPROTON_GRAPHICS}`);
 }
 
 const ACTIONS = [
   { name: 'Metal HUD', run: v => v.toggles.MTL_HUD_ENABLED.props.onChange(!v.toggles.MTL_HUD_ENABLED.props.checked),
     want: (v0, v1) => v1.toggles.MTL_HUD_ENABLED.props.checked === !v0.toggles.MTL_HUD_ENABLED.props.checked },
-  { name: 'MSync', run: v => v.toggles.WINEMSYNC.props.onChange(!v.toggles.WINEMSYNC.props.checked),
-    want: (v0, v1) => v1.toggles.WINEMSYNC.props.checked === !v0.toggles.WINEMSYNC.props.checked },
+  { name: 'High Resolution', run: v => v.toggles.NOTPROTON_RETINA.props.onChange(!v.toggles.NOTPROTON_RETINA.props.checked),
+    want: (v0, v1) => v1.toggles.NOTPROTON_RETINA.props.checked === !v0.toggles.NOTPROTON_RETINA.props.checked },
   { name: 'raw controllers', run: v => v.toggles.NOTPROTON_RAW_CONTROLLERS.props.onChange(!v.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked),
     want: (v0, v1) => v1.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked === !v0.toggles.NOTPROTON_RAW_CONTROLLERS.props.checked },
-  { name: 'backend dxvk', run: v => v.backend.props.onChange({ data: 'dxvk' }),
-    want: (v0, v1) => v1.backend.props.selectedOption === 'dxvk' },
-  { name: 'backend automatic', run: v => v.backend.props.onChange({ data: '' }),
-    want: (v0, v1) => v1.backend.props.selectedOption === '' },
+  { name: 'graphics wined3d', run: v => v.backend.props.onChange({ data: 'wined3d' }),
+    want: (v0, v1) => v1.backend.props.selectedOption === 'wined3d' },
+  { name: 'graphics dxmt', run: v => v.backend.props.onChange({ data: 'dxmt' }),
+    want: (v0, v1) => v1.backend.props.selectedOption === 'dxmt' },
   { name: 'upscale 1.5', run: v => v.upscale && v.upscale.props.onChange({ data: '1.5' }),
     want: (v0, v1) => !v0.upscale || v1.upscale.props.selectedOption === '1.5' },
   { name: 'upscale off', run: v => v.upscale && v.upscale.props.onChange({ data: '' }),
@@ -115,8 +114,10 @@ const ACTIONS = [
 ];
 
 const CASES = [
-  "CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG='d3d11.preferredMaxFrameRate=60' %command%",
-  'CX_GRAPHICS_BACKEND=dxmt DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG="d3d11.preferredMaxFrameRate=60;" %command%',
+  "NOTPROTON_GRAPHICS=dxmt DXMT_CONFIG='d3d11.preferredMaxFrameRate=60' %command%",
+  "NOTPROTON_GRAPHICS=wined3d DXMT_CONFIG='d3d11.preferredMaxFrameRate=60' %command%",
+  'NOTPROTON_GRAPHICS= MTL_HUD_ENABLED=1 %command%',
+  'NOTPROTON_GRAPHICS=dxmt DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG="d3d11.preferredMaxFrameRate=60;" %command%',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor = 1.5 ; d3d11.preferredMaxFrameRate=30" %command%',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=3.0;d3d11.metalSpatialUpscaleFactor=1.5" %command%',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=0.5 %command%',
@@ -128,7 +129,7 @@ const CASES = [
   '%command% --offline',
   'MTL_HUD_ENABLED=1 %command%',
   'MTL_HUD_ENABLED="1" %command% --offline',
-  "MTL_HUD_ENABLED='1' WINEMSYNC=0 %command%",
+  "MTL_HUD_ENABLED='1' NOTPROTON_RETINA=0 %command%",
   'MTL_HUD_ENABLED=1 %COMMAND%',
   'MTL_HUD_ENABLED=1 %Command% -windowed',
   'MTL_HUD_ENABLED=1 %command%%command%',
@@ -141,7 +142,7 @@ const CASES = [
   'MTL_HUD_ENABLED=1\tMTL_HUD_ENABLED="0" %command%',
   'MTL_HUD_ENABLED=1 MTL_HUD_ENABLED="" %command%',
   'MTL_HUD_ENABLED=1 -windowed',
-  'MTL_HUD_ENABLED=1 CX_GRAPHICS_BACKEND=dxmt',
+  'MTL_HUD_ENABLED=1 NOTPROTON_GRAPHICS=dxmt',
   '-windowed MTL_HUD_ENABLED=1',
   'MTL_HUD_ENABLED=1 gamemoderun %command%',
   'gamemoderun MTL_HUD_ENABLED=1 %command%',
@@ -149,7 +150,7 @@ const CASES = [
   'MTL_HUD_ENABLED=1; %command%',
   'MTL_HUD_ENABLED=1 true && %command%',
   'true && MTL_HUD_ENABLED=1 %command% --offline',
-  'true; CX_GRAPHICS_BACKEND=dxmt %command%',
+  'true; NOTPROTON_GRAPHICS=dxmt %command%',
   'MTL_HUD_ENABLED=1 %command% | cat',
   'MTL_HUD_ENABLED=1 %command% > /dev/null 2>&1',
   'MTL_HUD_ENABLED=1 2>/dev/null %command%',
@@ -162,7 +163,7 @@ const CASES = [
   'FOO="$(echo "a)b")" MTL_HUD_ENABLED=1 %command%',
   'FOO=`echo a b` MTL_HUD_ENABLED=1 %command%',
   'FOO=${HOME:-a b} MTL_HUD_ENABLED=1 %command%',
-  'CX_GRAPHICS_BACKEND=dxmt DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2.0 %command%',
+  'NOTPROTON_GRAPHICS=dxmt DXMT_METALFX_SPATIAL_SWAPCHAIN=1 DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2.0 %command%',
   'MTL_HUD_ENABLED="1 %command%',
   'MTL_HUD_ENABLED=1 "%command%"',
   'MTL_HUD_ENABLED=1 \\%command%',

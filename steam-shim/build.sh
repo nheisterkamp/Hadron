@@ -89,7 +89,7 @@ echo "==> built $out  $1  $size bytes  $2 (timestamp and checksum zeroed)"
 
 # One consumer: RUN_SCRIPT copies the flat bridge copy into the prefix Steam
 # directory on every launch. The shim is not a wine builtin, so nothing goes into
-# the CrossOver tree.
+# the runtime.
 dst=$BRIDGE_DIR/steam.exe
 mkdir -p "$BRIDGE_DIR"
 cp -f "$out" "$dst"

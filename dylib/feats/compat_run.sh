@@ -1,5 +1,5 @@
 #!/bin/sh
-# notproton CrossOver compatibility tool shim
+# notproton compatibility tool shim
 set -e
 
 verb="$1"
@@ -137,39 +137,22 @@ case "$verb" in
     ;;
 esac
 
-# cxcompatdb resolves its database through CX_HOME and logs an error for
-# every module loaded without it :(
-export CX_HOME="$HOME/Library/Application Support/CrossOver"
-np_flavor=""
 np_build=""
 CDPATH=''
 np_tool_dir=$(cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || np_tool_dir=""
-if [ -n "$np_tool_dir" ] && [ -r "$np_tool_dir/flavor" ]; then
-  read -r np_flavor < "$np_tool_dir/flavor" || np_flavor=""
-fi
 if [ -n "$np_tool_dir" ] && [ -r "$np_tool_dir/build" ]; then
   read -r np_build < "$np_tool_dir/build" || np_build=""
 fi
 case "$np_build" in *[!A-Za-z0-9.-]*) np_build="" ;; esac
 np_display=$(sed -n 's/.*"display_name"[[:space:]]*"\(.*\)".*/\1/p' \
   "$np_tool_dir/compatibilitytool.vdf" 2>/dev/null | head -1) || np_display=""
-[ -n "$np_display" ] || np_display="CrossOver build ${np_build:-unknown}"
-CX_ROOT="$np_support/runners/crossover-$np_build/CrossOver"
-export CX_ROOT
-# CrossOver initializes Rosetta's Windows thread-state support even without D3DMetal.
-if [ -f "$CX_ROOT/lib64/apple_gptk/external/libd3dshared.dylib" ]; then
-  export CX_APPLEGPTK_LIBD3DSHARED_PATH="$CX_ROOT/lib64/apple_gptk/external/libd3dshared.dylib"
-fi
+[ -n "$np_display" ] || np_display="Wine runtime ${np_build:-unknown}"
+# The runtime the app copied from runtime/build-wine.sh's output.
+np_root="$np_support/runners/$np_build"
 
-wine_unix="$CX_ROOT/lib/wine/aarch64-unix"
-WINELOADER="$wine_unix/wine.app/Contents/MacOS/wine"
-WINESERVER="$CX_ROOT/bin/wineserver-arm64"
-if [ "$np_flavor" = rosetta ] || [ ! -x "$WINELOADER" ] || [ ! -x "$WINESERVER" ]; then
-  wine_unix="$CX_ROOT/lib/wine/x86_64-unix"
-  WINELOADER="$wine_unix/wine"
-  WINESERVER="$CX_ROOT/bin/wineserver"
-  [ -x "$WINESERVER" ] || WINESERVER="$CX_ROOT/bin/wineserver-x86"
-fi
+wine_unix="$np_root/lib/wine/x86_64-unix"
+WINELOADER="$wine_unix/wine"
+WINESERVER="$np_root/bin/wineserver"
 export WINELOADER WINESERVER
 
 # Keeps Wine from inheriting the prefix and template locks (fd 8 and 9).
@@ -178,8 +161,8 @@ without_lock_fds() {
 }
 
 # If two WINEDLLPATH directories have the same DLL, Wine uses the one listed first.
-export WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
-export PATH="$CX_ROOT/bin:$PATH"
+export WINEDLLPATH="$np_root/lib/wine/x86_64-windows:$wine_unix${WINEDLLPATH:+:$WINEDLLPATH}"
+export PATH="$np_root/bin:$PATH"
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   log="$STEAM_COMPAT_DATA_PATH/notproton-run.log"
@@ -247,8 +230,8 @@ prefix_machine() {
 
 tool_name() {
   case "$1" in
-    aa64) printf 'the FEX build of CrossOver' ;;
-    8664) printf 'the Rosetta build of CrossOver' ;;
+    aa64) printf 'an arm64 (FEX) Wine runtime' ;;
+    8664) printf 'an x86_64 (Rosetta) Wine runtime' ;;
     *) printf 'an older 32-bit setup' ;;
   esac
 }
@@ -286,17 +269,17 @@ last_wine_build() {
   # Wine ends the line with CRLF.
   updated=${updated%"$(printf '\r')"}
   case "$updated" in '' | *[!0-9]*) return 0 ;; esac
-  [ "$updated" = "$(stat -f %m "$CX_ROOT/share/wine/wine.inf" 2>/dev/null)" ] && return 0
+  [ "$updated" = "$(stat -f %m "$np_root/share/wine/wine.inf" 2>/dev/null)" ] && return 0
   had_build=other
-  had_display="another version of CrossOver"
-  for inf in "$np_support"/runners/crossover-*/CrossOver/share/wine/wine.inf; do
+  had_display="an earlier Wine runtime"
+  for inf in "$np_support"/runners/*/share/wine/wine.inf; do
     [ "$(stat -f %m "$inf" 2>/dev/null)" = "$updated" ] || continue
     if [ "$had_build" != other ]; then
       had_build=other
-      had_display="another version of CrossOver"
+      had_display="an earlier Wine runtime"
       break
     fi
-    had_build=${inf#"$np_support/runners/crossover-"}
+    had_build=${inf#"$np_support/runners/"}
     had_build=${had_build%%/*}
     had_display=$(awk -F '\t' -v b="$had_build" '$2 == b { print $4; exit }' \
       "$np_support/tools" 2>/dev/null) || had_display=""
@@ -317,7 +300,7 @@ refuse_other_build() {
   fi
   if [ -n "$had_build" ] && [ "$had_build" != "$np_build" ]; then
     echo "=== prefix was last run by build $had_build and this compatibility tool runs $np_build, rebuild the prefix in Hadron ===" >> "$log" 2>&1 || true
-    had_display=$(alert_safe "${had_display:-CrossOver build $had_build}")
+    had_display=$(alert_safe "${had_display:-Wine runtime $had_build}")
     show_alert "This game needs its prefix rebuilt" "This game's prefix was last run by $had_display, and this compatibility tool runs $(alert_safe "$np_display"). Rebuild the prefix in Hadron to run it here, or pick $had_display again in the game's Compatibility settings. You will not lose game saves by rebuilding the prefix."
     exit 1
   fi
@@ -465,11 +448,6 @@ migrate_user_paths() {
 
 lay_out_proton_profile() {
   users="${1:-$WINEPREFIX}/drive_c/users"
-  if [ -d "$users/crossover" ] && [ ! -L "$users/crossover" ]; then
-    echo "=== prefix predates the steamuser layout, rebuild it for cloud saves ===" \
-      >> "$log" 2>&1 || true
-    return 0
-  fi
   profile="$users/steamuser"
   if [ -L "$profile" ]; then
     echo "=== the profile is a link, rebuild the prefix for cloud saves ===" \
@@ -482,13 +460,6 @@ lay_out_proton_profile() {
     mkdir -p "$profile/$folder" 2>/dev/null || true
   done
   migrate_user_paths "$profile" || return 1
-  if [ -L "$users/crossover" ] && [ ! -e "$users/crossover" ]; then
-    rm -f "$users/crossover" 2>/dev/null || true
-  fi
-  if [ ! -e "$users/crossover" ] \
-    && ln -s steamuser "$users/crossover" 2>/dev/null; then
-    echo "=== pointed crossover at steamuser ===" >> "$log" 2>&1 || true
-  fi
 }
 
 controller_ids() {
@@ -523,7 +494,7 @@ write_owned_controllers() {
   return 1
 }
 
-# Proton hides the controllers that Steam Input handles from the Wine process. CrossOver
+# Proton hides the controllers that Steam Input handles from the Wine process. Wine
 # still reads a few directly (DualSense, DualShock 4, Switch 1 Pro Controller and Joy-Cons),
 # so Hidraw=0 hides those too. The Switch controllers get Hidraw=0 even when Steam Input
 # is off, to avoid silently breaking controller support in most games.
@@ -610,29 +581,26 @@ import_prefix_settings() {
 }
 
 stage_step="runner check"
-if [ -z "$np_build" ] || [ ! -d "$CX_ROOT/lib/wine" ]; then
+if [ -z "$np_build" ] || [ ! -d "$np_root/lib/wine" ]; then
   echo "=== build ${np_build:-(none recorded)} behind this compatibility tool is not set up, set it up in Hadron ===" >> "$log" 2>&1 || true
-  show_alert "CrossOver is not set up" "The CrossOver build behind $(alert_safe "$np_display") is not set up. Set it up in Hadron, or pick another compatibility tool for this game."
+  show_alert "The Wine runtime is not set up" "The Wine runtime behind $(alert_safe "$np_display") is not set up. Set it up in Hadron, or pick another compatibility tool for this game."
   exit 1
 fi
-echo "runner: build $np_build ($np_display) at $CX_ROOT" >> "$log" 2>&1 || true
+echo "runner: build $np_build ($np_display) at $np_root" >> "$log" 2>&1 || true
 
-# A self-built runtime carries DXMT beside Wine's own d3d11 and dxgi, and its Wine
-# searches NOTPROTON_DLL_OVERLAY first. NOTPROTON_GRAPHICS=wined3d in a game's launch
-# options leaves that game on Wine's own.
+# The runtime carries DXMT beside Wine's own d3d11 and dxgi, and its Wine searches
+# NOTPROTON_DLL_OVERLAY first. NOTPROTON_GRAPHICS=wined3d in a game's launch options
+# leaves that game on Wine's own.
 unset NOTPROTON_DLL_OVERLAY
-if [ -f "$CX_ROOT/notproton-runtime" ]; then
-  np_graphics="${NOTPROTON_GRAPHICS:-dxmt}"
-  if [ "$np_graphics" = dxmt ] && [ -d "$CX_ROOT/lib/dxmt" ]; then
-    export NOTPROTON_DLL_OVERLAY="$CX_ROOT/lib/dxmt"
-  fi
-  echo "graphics: $np_graphics (${NOTPROTON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
+np_graphics="${NOTPROTON_GRAPHICS:-dxmt}"
+if [ "$np_graphics" = dxmt ] && [ -d "$np_root/lib/dxmt" ]; then
+  export NOTPROTON_DLL_OVERLAY="$np_root/lib/dxmt"
 fi
+echo "graphics: $np_graphics (${NOTPROTON_DLL_OVERLAY:-Wine builtin})" >> "$log" 2>&1 || true
 
-# Each CrossOver build needs its own template.
-# FEX builds need two, one for FEX/arm64 Wine and one for Rosetta/AMD64 Wine
+# Each runtime build needs its own template.
 runner_id=""
-[ -z "$np_build" ] || runner_id="crossover-$np_build-${wine_unix##*/}"
+[ -z "$np_build" ] || runner_id="$np_build-${wine_unix##*/}"
 
 in_template_env() {
   prefix="$1"
@@ -640,8 +608,8 @@ in_template_env() {
   without_lock_fds \
     env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" TMPDIR="${TMPDIR:-/tmp}" \
     LANG="${LANG:-}" LC_ALL="${LC_ALL:-}" \
-    PATH="$CX_ROOT/bin:/usr/bin:/bin:/usr/sbin:/sbin" CX_ROOT="$CX_ROOT" CX_HOME="$CX_HOME" \
-    WINEDLLPATH="$CX_ROOT/lib/wine/x86_64-windows:$wine_unix" \
+    PATH="$np_root/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    WINEDLLPATH="$np_root/lib/wine/x86_64-windows:$wine_unix" \
     WINELOADER="$WINELOADER" WINESERVER="$WINESERVER" WINEPREFIX="$prefix" "$@"
 }
 
@@ -818,7 +786,7 @@ prefix_is_bare() (
           continue
         fi
         case "$part:$(readlink "$node")" in
-          /dosdevices/c::../drive_c|/dosdevices/z::/|/drive_c/users/crossover:steamuser|\
+          /dosdevices/c::../drive_c|/dosdevices/z::/|\
           '/drive_c/users/steamuser/My Documents:./Documents'|\
           '/drive_c/users/steamuser/Application Data:./AppData/Roaming'|\
           '/drive_c/users/steamuser/Local Settings/Application Data:../AppData/Local') continue ;;
@@ -838,9 +806,9 @@ prefix_is_bare() (
 )
 
 template_identity() (
-  stat -f '%d:%i:%c' "$CX_ROOT" || return 1
+  stat -f '%d:%i:%c' "$np_root" || return 1
   /usr/bin/shasum -a 256 < "$np_tool_dir/run" || return 1
-  cd "$CX_ROOT" || return 1
+  cd "$np_root" || return 1
   set -- "$WINELOADER" "$WINESERVER" share/wine/wine.inf
   for file in lib/wine/*-windows/ntdll.dll lib/wine/*-windows/lsteamclient.dll \
     lib/wine/*-unix/lsteamclient.so; do
@@ -1015,7 +983,7 @@ link_fonts() {
   [ -f "$WINEPREFIX/system.reg" ] || return 0
   fonts_dir="$WINEPREFIX/drive_c/windows/Fonts"
   mkdir -p "$fonts_dir" 2>> "$log" || return 0
-  for dir in "$np_support/fonts" "$CX_ROOT/share/wine/fonts"; do
+  for dir in "$np_support/fonts" "$np_root/share/wine/fonts"; do
     for src in "$dir"/*.ttf "$dir"/*.ttc; do
       [ -f "$src" ] || continue
       name=$(basename "$src")
@@ -1036,22 +1004,11 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
   stage_step="prefix lock"
   prepare_prefix_directory
-  msync_from=environment
-  if [ -z "$WINEMSYNC" ] && [ -r "$STEAM_COMPAT_DATA_PATH/notproton-msync" ]; then
-    WINEMSYNC=$(tr -d ' \t\n' \
-      < "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true)
-    msync_from=carried-over
-  fi
-  [ -n "$WINEMSYNC" ] || msync_from=default
-  export WINEMSYNC="${WINEMSYNC:-0}"
-  printf '%s' "$WINEMSYNC" \
-    > "$STEAM_COMPAT_DATA_PATH/notproton-msync" 2>/dev/null || true
   stage_step="prefix build check"
   refuse_other_build
   stage_step="prefix arch check"
   refuse_foreign_prefix
   claim_prefix
-  echo "sync: WINEMSYNC=$WINEMSYNC from $msync_from" >> "$log" 2>&1 || true
   without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
   stage_step="prefix seed"
   seed_prefix_from_template
@@ -1075,27 +1032,12 @@ fi
 bridge_src="$np_support/bridge"
 prefix_steam="$WINEPREFIX/drive_c/Program Files (x86)/Steam"
 verify_runner() {
-  # A self-built runtime is patched in source, so there is no bridge copy to compare.
-  if [ ! -d "$bridge_src/wine/$np_build" ] && [ ! -f "$CX_ROOT/notproton-runtime" ]; then
-    echo "=== no patched ntdll for build $np_build in the bridge, set it up in Hadron ===" >> "$log" 2>&1 || true
-    return
-  fi
-  for arch in x86_64-windows i386-windows aarch64-windows; do
-    staged="$bridge_src/wine/$np_build/$arch/ntdll.dll"
-    live="$CX_ROOT/lib/wine/$arch/ntdll.dll"
-    [ -f "$staged" ] || continue
-    if [ ! -f "$live" ]; then
-      echo "=== runner has no $arch ntdll, set up the runner in Hadron ===" >> "$log" 2>&1 || true
-    elif ! cmp -s "$staged" "$live"; then
-      echo "=== runner $arch ntdll is not the patched copy, set up the runner in Hadron ===" >> "$log" 2>&1 || true
-    fi
-  done
   for arch in i386-windows x86_64-windows "${wine_unix##*/}"; do
     case "$arch" in
       *-unix) name="lsteamclient.so" ;;
       *) name="lsteamclient.dll" ;;
     esac
-    [ -f "$CX_ROOT/lib/wine/$arch/$name" ] && continue
+    [ -f "$np_root/lib/wine/$arch/$name" ] && continue
     echo "=== runner is missing $arch/$name, set up the runner in Hadron ===" >> "$log" 2>&1 || true
   done
 }
@@ -1290,7 +1232,7 @@ if [ "$foreground" = 0 ]; then
   exit $status
 fi
 
-# Fixes CrossOver window focus issues
+# Fixes window focus issues
 steam_root="$(dirname "$(dirname "$(dirname "$STEAM_COMPAT_DATA_PATH")")")"
 manifest="$steam_root/steamapps/appmanifest_$app_id.acf"
 find_client_root "$STEAM_COMPAT_CLIENT_INSTALL_PATH"
@@ -1358,7 +1300,7 @@ for f in "$wine_unix"/*; do
   [ -e "$f" ] || continue
   base=${f##*/}
   case "$base" in
-    wine|wine.app) continue ;;
+    wine) continue ;;
   esac
   ln -sfn "$f" "$loader_macos/$base"
 done
@@ -1514,19 +1456,16 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|Steam[A-Za-z0-9]*|(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
+for name in $(env | sed -nE 's/^(Steam[A-Za-z0-9]*|(DXMT_|DXVK_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
 done
 set -- \
-  --env CX_ROOT="$CX_ROOT" \
-  --env CX_HOME="$CX_HOME" \
   --env WINESERVER="$WINESERVER" \
   --env WINEDLLPATH="$WINEDLLPATH" \
   --env WINEDLLOVERRIDES="$WINEDLLOVERRIDES" \
   --env NOTPROTON_DLL_OVERLAY="${NOTPROTON_DLL_OVERLAY:-}" \
-  --env WINEMSYNC="$WINEMSYNC" \
   --env WINEPREFIX="$WINEPREFIX" \
   --env WINEDEBUG="$WINEDEBUG" \
   --env PATH="$PATH" \

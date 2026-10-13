@@ -21,9 +21,6 @@ enum BridgePayload {
             "lsteamclient.dll",
             "x86_64-windows/lsteamclient.dll",
         ]),
-        Entry(resource: "aarch64-unix-lsteamclient.so", bridgePaths: [
-            "aarch64-unix/lsteamclient.so",
-        ]),
         Entry(resource: "x86_64-unix-lsteamclient.so", bridgePaths: [
             "lsteamclient.so",
             "x86_64-unix/lsteamclient.so",

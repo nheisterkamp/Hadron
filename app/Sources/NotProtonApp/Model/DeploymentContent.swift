@@ -172,16 +172,6 @@ enum DeploymentContent {
             File(source: payload.run, destination: compatTools.appending(path: "\($0.name)/run"),
                  name: "\($0.name)/run", executable: true)
         }
-        for build in Set(tools.map(\.build)).sorted() where SupportedRunners.build(id: build)?.source != .runtime {
-            let root = SupportPaths.clonedRoot(forBuild: build, runners: runners)
-            for builtin in RunnerPatcher.builtins(in: root) {
-                let path = "\(builtin.arch)/\(builtin.name)"
-                if let entry = bridgePayload.sources.first(where: { $0.bridgePaths.contains(path) }) {
-                    files.append(File(source: entry.source, destination: root.appending(path: "lib/wine/\(path)"),
-                                      name: "crossover-\(build)/\(path)"))
-                }
-            }
-        }
         return files
     }
 
@@ -214,15 +204,6 @@ enum DeploymentContent {
         let tools = CompatToolList.installed(runners: runners, file: list)
         if !tools.isEmpty || FileManager.default.fileExists(atPath: list.path(percentEncoded: false)) {
             files.append((list, Digest.sha256(of: Data(CompatToolList.contents(tools).utf8)), "tools"))
-        }
-        for build in RunnerStore.installedBuilds(in: runners) {
-            for (arch, hash) in build.patchedNtdll {
-                let file = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
-                    .appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll")
-                files.append((file, hash, "crossover-\(build.id)/\(arch.rawValue)/ntdll.dll"))
-                files.append((NtdllPatcher.stagedCopy(of: arch, build: build.id, in: bridge), hash,
-                              "bridge/wine/\(build.id)/\(arch.rawValue)/ntdll.dll"))
-            }
         }
         return files
     }

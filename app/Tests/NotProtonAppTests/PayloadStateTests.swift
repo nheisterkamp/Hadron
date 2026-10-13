@@ -152,12 +152,11 @@ struct PayloadStateTests {
     func splitsMissingByOrigin() {
         let built = PayloadEntry(origin: .built, path: "x86_64-unix/lsteamclient.so")
         let valve = PayloadEntry(origin: .valve, path: "steamclient64.dll")
-        let patched = PayloadEntry(origin: .patched, path: "wine/i386-windows/ntdll.dll")
-        let payload = state(missing: [built, valve, patched])
+        let shim = PayloadEntry(origin: .built, path: "steam.exe")
+        let payload = state(missing: [built, valve, shim])
 
-        #expect(payload.missing(origin: .built) == [built])
+        #expect(payload.missing(origin: .built) == [built, shim])
         #expect(payload.missing(origin: .valve) == [valve])
-        #expect(payload.missing(origin: .patched) == [patched])
     }
 
     @Test("An origin with nothing missing reports nothing")

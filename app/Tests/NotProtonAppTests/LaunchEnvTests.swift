@@ -39,7 +39,7 @@ struct LaunchEnvTests {
     @Test("A launch option cannot shadow the runner's own dlls")
     func dllPathKeepsTheRunnerFirst() throws {
         let line = try Self.line(containing: "export WINEDLLPATH=", "x86_64-windows")
-        let runner = try #require(line.range(of: "$CX_ROOT/lib/wine/x86_64-windows"))
+        let runner = try #require(line.range(of: "$np_root/lib/wine/x86_64-windows"))
         let user = try #require(line.range(of: "${WINEDLLPATH:+"))
         #expect(
             runner.lowerBound < user.lowerBound,
@@ -58,7 +58,7 @@ struct LaunchEnvTests {
         }
 
         let path = try Self.line(containing: "export PATH=")
-        let runner = try #require(path.range(of: "$CX_ROOT/bin"))
+        let runner = try #require(path.range(of: "$np_root/bin"))
         let inherited = try #require(path.range(of: ":$PATH"))
         #expect(
             runner.lowerBound < inherited.lowerBound,

@@ -48,73 +48,61 @@ struct PrefixToolsTests {
         // reads under different rules, and nothing else would notice the drift.
         let source = try Self.compatSource()
 
-        // Written in compat_run.sh as: export WINELOADER="$CX_ROOT/lib/wine/..."
-        func exported(_ name: String) throws -> String {
-            let pattern = #"export \#(name)="([^"]*)""#
-            let regex = try Regex(pattern)
+        // Written in compat_run.sh as: WINELOADER="$wine_unix/wine"
+        func assigned(_ name: String, exported: Bool = false) throws -> String {
+            let pattern = #"(?m)^\#(exported ? "export " : "")\#(name)="([^"]*)""#
             let match = try #require(
-                source.firstMatch(of: regex), "compat_run.sh no longer exports \(name)")
+                source.firstMatch(of: try Regex(pattern)), "compat_run.sh no longer sets \(name)")
             return String(match[1].substring ?? "")
         }
 
-        let home = try exported("CX_HOME").replacingOccurrences(
-            of: "$HOME", with: SupportPaths.home.path(percentEncoded: false))
-
-        // Both sides resolve the loader and wineserver from whichever unix directory the runner
-        // has, so the check is that they pick the same pair for the same tree.
         let fm = FileManager.default
-        for (arch, loaderTail, serverName) in [
-            ("aarch64-unix", "wine.app/Contents/MacOS/wine", "wineserver-arm64"),
-            ("x86_64-unix", "wine", "wineserver-x86"),
-        ] {
-            let runner = URL(filePath: NSTemporaryDirectory())
-                .appending(path: "notproton-layout-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: runner) }
+        let dir = try scratchDirectory("layout")
+        defer { try? fm.removeItem(at: dir) }
+        let support = dir.appending(path: "notproton")
+        let runner = try makeInstalledRuntime(in: support.appending(path: "runners"), server: true)
 
-            for path in ["lib/wine/\(arch)/\(loaderTail)", "bin/\(serverName)"] {
-                let file = runner.appending(path: path)
-                try fm.createDirectory(
-                    at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data().write(to: file)
-                try fm.setAttributes(
-                    [.posixPermissions: 0o755], ofItemAtPath: file.path(percentEncoded: false))
-            }
-
-            let layout = PrefixTools.layout(runner: runner)
-            #expect(layout.loader == runner.appending(path: "lib/wine/\(arch)/\(loaderTail)"))
-            #expect(layout.server == runner.appending(path: "bin/\(serverName)"))
-
-            // The shapes the script reaches for, which is what would drift independently.
-            #expect(source.contains("$wine_unix/\(loaderTail)"))
-            #expect(source.contains(serverName))
-
-            let environment = PrefixTools.environment(prefix: samplePrefix(), runner: runner)
-            let dllPath = try exported("WINEDLLPATH")
+        // The script's paths with its variables filled in for this tree.
+        func resolved(_ text: String) throws -> String {
+            let root = try assigned("np_root")
+                .replacingOccurrences(of: "$np_support", with: support.path(percentEncoded: false))
+                .replacingOccurrences(of: "$np_build", with: shippedRuntimeID)
+            let unix = try assigned("wine_unix").replacingOccurrences(of: "$np_root", with: root)
+            return text
                 .replacingOccurrences(of: "${WINEDLLPATH:+:$WINEDLLPATH}", with: "")
-                .replacingOccurrences(of: "$CX_ROOT", with: runner.path(percentEncoded: false))
-                .replacingOccurrences(of: "$wine_unix", with: layout.unixDir.path(percentEncoded: false))
-
-            #expect(environment["WINEDLLPATH"] == dllPath, "WINEDLLPATH drifted from RUN_SCRIPT")
-            #expect(environment["WINELOADER"] == layout.loader.path(percentEncoded: false))
-            #expect(environment["WINESERVER"] == layout.server.path(percentEncoded: false))
-            #expect(environment["CX_HOME"] == home)
-
-            // WINELOADER is what launch and recreate actually invoke, so the two have to
-            // agree with each other as well as with the script.
-            #expect(environment["WINELOADER"]
-                == PrefixTools.loader(runner: runner).path(percentEncoded: false))
+                .replacingOccurrences(of: "$wine_unix", with: unix)
+                .replacingOccurrences(of: "$np_root", with: root)
         }
+
+        #expect(try resolved("$np_root") == runner.path(percentEncoded: false))
+
+        let layout = PrefixTools.layout(runner: runner)
+        #expect(layout.loader.path(percentEncoded: false) == (try resolved(assigned("WINELOADER"))))
+        #expect(layout.server.path(percentEncoded: false) == (try resolved(assigned("WINESERVER"))))
+        #expect(layout.unixDir.path(percentEncoded: false) == (try resolved("$wine_unix")))
+
+        let environment = PrefixTools.environment(prefix: samplePrefix(), runner: runner)
+        #expect(environment["WINEDLLPATH"] == (try resolved(assigned("WINEDLLPATH", exported: true))),
+                "WINEDLLPATH drifted from RUN_SCRIPT")
+        #expect(environment["WINELOADER"] == layout.loader.path(percentEncoded: false))
+        #expect(environment["WINESERVER"] == layout.server.path(percentEncoded: false))
+        let path = try resolved(assigned("PATH", exported: true)).replacingOccurrences(of: ":$PATH", with: ":")
+        #expect(environment["PATH"]?.hasPrefix(path) == true)
+
+        // WINELOADER is what launch and recreate actually invoke, so the two have to
+        // agree with each other as well as with the script.
+        #expect(environment["WINELOADER"]
+            == PrefixTools.loader(runner: runner).path(percentEncoded: false))
     }
 
-    @Test("The prefix and the sync backend are set, and the game only variables are not")
-    func setsPrefixAndBackend() {
+    @Test("The prefix is set, and the game only variables are not")
+    func setsPrefix() {
         let prefix = samplePrefix()
-        let runner = SupportPaths.clonedRoot(forBuild: "27.0.0.40921-fex")
+        let runner = SupportPaths.runnerRoot(forBuild: shippedRuntimeID)
         let environment = PrefixTools.environment(prefix: prefix, runner: runner)
 
         #expect(environment["WINEPREFIX"] == prefix.pfx.path(percentEncoded: false))
         #expect(environment["WINEPREFIX"]?.hasSuffix("/compatdata/1574480/pfx") == true)
-        #expect(environment["WINEMSYNC"] == PrefixTools.syncBackend(prefix: prefix))
         // Derived rather than spelled out, because the support directory hangs off the
         // running account's home and a literal here would only ever pass on one machine.
         let runnerBin = runner.appending(path: "bin")
@@ -126,25 +114,15 @@ struct PrefixToolsTests {
         #expect(environment["WINEDLLOVERRIDES"] == nil)
     }
 
-    @Test("The sync backend is whatever the last launch recorded")
-    func readsRecordedBackend() throws {
-        let root = URL(filePath: NSTemporaryDirectory())
-            .appending(path: "np-msync-\(UUID().uuidString)")
-        let library = SteamLibrary(root: root)
-        let prefix = WinePrefix(appID: "480", name: nil, library: library, lastUsed: nil)
-        try FileManager.default.createDirectory(at: prefix.root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+    @Test("A runtime is laid out as its x86_64 tree by default")
+    func defaultsToRosettaLayout() throws {
+        let dir = try scratchDirectory("layout-default")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runner = try makeRuntime(at: dir.appending(path: "runtime"))
 
-        #expect(PrefixTools.syncBackend(prefix: prefix) == "0")
-
-        let marker = prefix.root.appending(path: "notproton-msync")
-        for (recorded, expected) in [("1", "1"), ("0", "0"), ("1\n", "1"), ("", "0"), ("yes", "0")] {
-            try recorded.write(to: marker, atomically: true, encoding: .utf8)
-            #expect(
-                PrefixTools.syncBackend(prefix: prefix) == expected,
-                "recorded \(recorded.debugDescription)")
-            #expect(PrefixTools.environment(prefix: prefix, runner: root)["WINEMSYNC"] == expected)
-        }
+        let layout = PrefixTools.layout(runner: runner)
+        #expect(layout.unixDir.lastPathComponent == "x86_64-unix")
+        #expect(layout.loader == RuntimeSource.unixLoader(inRoot: runner))
     }
 
     @Test("Every tool is offered under the name the loader resolves")
@@ -270,7 +248,7 @@ struct PrefixToolsTests {
     func dialogNamesBothBuilds() throws {
         let source = try Self.compatSource()
 
-        // Written in compat_run.sh as: aa64) printf 'the FEX build of CrossOver' ;;
+        // Written in compat_run.sh as: aa64) printf 'an arm64 (FEX) Wine runtime' ;;
         func name(of word: String) throws -> String {
             let match = try #require(
                 source.firstMatch(of: try Regex("\(word)\\) printf '([^']+)'")),
@@ -367,14 +345,16 @@ struct PrefixToolsTests {
               "$WINEPREFIX/drive_c/Program Files" \\
               "$WINEPREFIX/drive_c/Program Files (x86)" \\
               "$WINEPREFIX/drive_c/ProgramData" \\
-              "$WINEPREFIX/drive_c/users/crossover/AppData" \\
-              "$WINEPREFIX/drive_c/users/crossover/Desktop"
+              "$WINEPREFIX/drive_c/users/steamuser/AppData" \\
+              "$WINEPREFIX/drive_c/users/steamuser/Desktop"
             printf fresh > "$WINEPREFIX/drive_c/windows/system32/ntdll.dll"
-            printf template > "$WINEPREFIX/drive_c/users/crossover/AppData/wine.ini"
-            printf template > "$WINEPREFIX/drive_c/users/crossover/AppData/fresh.ini"
+            printf template > "$WINEPREFIX/drive_c/users/steamuser/AppData/wine.ini"
+            printf template > "$WINEPREFIX/drive_c/users/steamuser/AppData/fresh.ini"
             printf 'fresh user' > "$WINEPREFIX/user.reg"
             printf 'fresh system' > "$WINEPREFIX/system.reg"
-            ln -s "\(home.path(percentEncoded: false))" "$WINEPREFIX/drive_c/users/crossover/Documents"
+            # Wine links a profile folder out to the mac home only where nothing is there yet.
+            [ -e "$WINEPREFIX/drive_c/users/steamuser/Documents" ] || \\
+              ln -s "\(home.path(percentEncoded: false))" "$WINEPREFIX/drive_c/users/steamuser/Documents"
             \(extra)
             \(lock ? "chflags uchg \"$WINEPREFIX\"" : ":")
             exit \(status)
@@ -397,20 +377,20 @@ struct PrefixToolsTests {
         let library = SteamLibrary(root: dir)
         let pfx = library.compatdata.appending(path: "1574480/pfx")
         let fm = FileManager.default
-        for path in ["drive_c/windows/system32", "drive_c/users/crossover/AppData/Roaming/game",
+        for path in ["drive_c/windows/system32", "drive_c/users/steamuser/AppData/Roaming/game",
                      "drive_c/Program Files/redist"] {
             try fm.createDirectory(at: pfx.appending(path: path), withIntermediateDirectories: true)
         }
         try Data("stale".utf8).write(to: pfx.appending(path: "drive_c/windows/system32/ntdll.dll"))
         try Data("redist".utf8).write(to: pfx.appending(path: "drive_c/windows/vcruntime.dll"))
         try Data("save".utf8)
-            .write(to: pfx.appending(path: "drive_c/users/crossover/AppData/Roaming/game/save.dat"))
+            .write(to: pfx.appending(path: "drive_c/users/steamuser/AppData/Roaming/game/save.dat"))
         try Data("installed".utf8).write(to: pfx.appending(path: "drive_c/Program Files/redist/thing.dll"))
         try Data("mine".utf8).write(to: pfx.appending(path: "user.reg"))
         try Data("stale system".utf8).write(to: pfx.appending(path: "system.reg"))
         try fm.createSymbolicLink(
-            at: pfx.appending(path: "drive_c/users/crossover/Documents"), withDestinationURL: home)
-        try Data("0".utf8).write(to: library.compatdata.appending(path: "1574480/notproton-msync"))
+            at: pfx.appending(path: "drive_c/users/steamuser/Documents"), withDestinationURL: home)
+        try Data("log".utf8).write(to: library.compatdata.appending(path: "1574480/notproton-run.log"))
         return try #require(PrefixStore.all(libraries: [library]).first)
     }
 
@@ -434,7 +414,7 @@ struct PrefixToolsTests {
 
         // Kept. HKCU comes over with the profile it belongs to, because a game keeps its
         // settings and sometimes its progress there.
-        #expect(text("drive_c/users/crossover/AppData/Roaming/game/save.dat") == "save")
+        #expect(text("drive_c/users/steamuser/AppData/Roaming/game/save.dat") == "save")
         #expect(text("user.reg") == "mine")
 
         // HKLM does not, so the record of what is installed matches the files that are
@@ -451,17 +431,17 @@ struct PrefixToolsTests {
         let inside = prefix.pfx.resolvingSymlinksInPath().path(percentEncoded: false)
         let documents = prefix.pfx.appending(path: "drive_c/users/steamuser/Documents")
         #expect(documents.resolvingSymlinksInPath().path(percentEncoded: false).hasPrefix(inside))
-        #expect(text("drive_c/users/crossover/Documents/letter.txt") == nil)
+        #expect(text("drive_c/users/steamuser/Documents/letter.txt") == nil)
         #expect(fm.fileExists(atPath: home.appending(path: "letter.txt").path(percentEncoded: false)))
 
         #expect(!fm.fileExists(
             atPath: prefix.root.appending(path: "pfx.rebuild").path(percentEncoded: false)))
-        #expect(fm.fileExists(atPath: prefix.root.appending(path: "notproton-msync").path(percentEncoded: false)))
+        #expect(fm.fileExists(atPath: prefix.root.appending(path: "notproton-run.log").path(percentEncoded: false)))
 
         let kept = try #require(PrefixStore.backups(of: prefix).first)
         #expect(PrefixStore.backups(of: prefix).count == 1)
         #expect(try String(
-            contentsOf: kept.appending(path: "drive_c/users/crossover/AppData/Roaming/game/save.dat"),
+            contentsOf: kept.appending(path: "drive_c/users/steamuser/AppData/Roaming/game/save.dat"),
             encoding: .utf8) == "save")
     }
 
@@ -476,7 +456,7 @@ struct PrefixToolsTests {
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
 
         let prefix = try usedPrefix(in: dir, home: home)
-        let documents = prefix.pfx.appending(path: "drive_c/users/crossover/Documents")
+        let documents = prefix.pfx.appending(path: "drive_c/users/steamuser/Documents")
         try fm.removeItem(at: documents)
         try fm.createDirectory(at: documents, withIntermediateDirectories: true)
         try Data("stale".utf8).write(to: documents.appending(path: "letter.txt"))
@@ -489,8 +469,9 @@ struct PrefixToolsTests {
     }
 
     // Two real profile directories with a save in each. Carrying them a name at a time emptied
-    // whichever the walk reached second, and which that was went by directory order.
-    @Test("A rebuild keeps both profiles of a prefix that has them side by side")
+    // whichever the walk reached second, and which that was went by directory order. Each now
+    // lands under its own name, so neither is folded into the other.
+    @Test("A rebuild keeps every profile of a prefix, each under its own name")
     func rebuildKeepsBothProfiles() throws {
         let fm = FileManager.default
         let dir = URL(filePath: NSTemporaryDirectory()).appending(path: UUID().uuidString)
@@ -500,26 +481,27 @@ struct PrefixToolsTests {
         let runner = try fakeRunner(in: dir, home: home)
         let prefix = try usedPrefix(in: dir, home: home)
 
-        let beside = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/LocalLow/other")
+        let beside = prefix.pfx.appending(path: "drive_c/users/player/AppData/LocalLow/other")
         try fm.createDirectory(at: beside, withIntermediateDirectories: true)
         try Data("theirs".utf8).write(to: beside.appending(path: "save.txt"))
 
         try PrefixTools.recreate(prefix, runner: runner)
 
-        let profile = prefix.pfx.appending(path: "drive_c/users/steamuser")
+        let users = prefix.pfx.appending(path: "drive_c/users")
         func text(_ path: String) -> String? {
-            try? String(contentsOf: profile.appending(path: path), encoding: .utf8)
+            try? String(contentsOf: users.appending(path: path), encoding: .utf8)
         }
-        #expect(text("AppData/Roaming/game/save.dat") == "save")
-        #expect(text("AppData/LocalLow/other/save.txt") == "theirs")
+        #expect(text("steamuser/AppData/Roaming/game/save.dat") == "save")
+        #expect(text("player/AppData/LocalLow/other/save.txt") == "theirs")
+        #expect(text("steamuser/AppData/LocalLow/other/save.txt") == nil)
     }
 
     // The merge keeps whichever copy the walk reaches first, never the newer date: a cloud
-    // download is stamped when it arrives. crossover is the profile the game wrote under.
-    @Test("Which of two profiles' copies survives does not turn on its date")
+    // download is stamped when it arrives. AppData is the name the game wrote under.
+    @Test("Which of two spellings' copies survives does not turn on its date")
     func rebuildResolvesAProfileCollisionTheSameWayRoundEitherWay() throws {
-        let shared = "AppData/Roaming/game/save.dat"
-        for newest in ["crossover", "steamuser"] {
+        let spellings = ["AppData/Roaming", "Application Data"]
+        for newest in spellings {
             let fm = FileManager.default
             let dir = URL(filePath: NSTemporaryDirectory()).appending(path: UUID().uuidString)
             defer { try? fm.removeItem(at: dir) }
@@ -527,27 +509,24 @@ struct PrefixToolsTests {
             try fm.createDirectory(at: home, withIntermediateDirectories: true)
             let runner = try fakeRunner(in: dir, home: home)
             let prefix = try usedPrefix(in: dir, home: home)
-            let users = prefix.pfx.appending(path: "drive_c/users")
+            let profile = prefix.pfx.appending(path: "drive_c/users/steamuser")
 
-            let beside = users.appending(path: "steamuser/\(shared)")
-            try fm.createDirectory(
-                at: beside.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data("steamuser".utf8).write(to: beside)
-            try Data("crossover".utf8).write(to: users.appending(path: "crossover/\(shared)"))
-            // Stamped rather than written in order, because the copy carries the date with it
-            // and the walk decides nothing.
-            for name in ["crossover", "steamuser"] {
-                let when = Date(timeIntervalSince1970: name == newest ? 2_000_000 : 1_000_000)
+            for spelling in spellings {
+                let copy = profile.appending(path: "\(spelling)/shared.sav")
+                try fm.createDirectory(
+                    at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(spelling.utf8).write(to: copy)
+                // Stamped rather than written in order, because the copy carries the date with it
+                // and the walk decides nothing.
+                let when = Date(timeIntervalSince1970: spelling == newest ? 2_000_000 : 1_000_000)
                 try fm.setAttributes(
-                    [.modificationDate: when],
-                    ofItemAtPath: users.appending(path: "\(name)/\(shared)")
-                        .path(percentEncoded: false))
+                    [.modificationDate: when], ofItemAtPath: copy.path(percentEncoded: false))
             }
 
             try PrefixTools.recreate(prefix, runner: runner)
 
-            let carried = users.appending(path: "steamuser/\(shared)")
-            #expect(try String(contentsOf: carried, encoding: .utf8) == "crossover",
+            let carried = profile.appending(path: "AppData/Roaming/shared.sav")
+            #expect(try String(contentsOf: carried, encoding: .utf8) == "AppData/Roaming",
                     "the answer moved when \(newest) was made the newer copy")
         }
     }
@@ -566,9 +545,8 @@ struct PrefixToolsTests {
         let users = prefix.pfx.appending(path: "drive_c/users")
 
         for (path, mark) in [
-            ("crossover/AppData/Roaming/Slot", "crossover"),
-            ("steamuser/AppData/Roaming/Slot", "steamuser"),
-            ("crossover/Application Data/Slot", "legacy"),
+            ("steamuser/AppData/Roaming/Slot", "modern"),
+            ("steamuser/Application Data/Slot", "legacy"),
         ] {
             let folder = users.appending(path: path)
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -586,18 +564,16 @@ struct PrefixToolsTests {
             ((try? fm.contentsOfDirectory(
                 atPath: roaming.appending(path: name).path(percentEncoded: false))) ?? []).sorted()
         }
-        // crossover sorts ahead of steamuser and AppData ahead of Application Data, so the
-        // instance that is kept is fixed rather than left to the order the filesystem lists in.
-        #expect(contents("Slot") == ["crossover.sav"], "the kept instance holds another session")
-        let parked = Set(contents("Slot BACKUP") + contents("Slot BACKUP 2"))
-        #expect(parked == ["legacy.sav", "steamuser.sav"], "an instance that lost was dropped")
+        // AppData sorts ahead of Application Data, so the instance that is kept is fixed
+        // rather than left to the order the filesystem lists in.
+        #expect(contents("Slot") == ["modern.sav"], "the kept instance holds another session")
+        #expect(contents("Slot BACKUP") == ["legacy.sav"], "an instance that lost was dropped")
 
         func read(_ name: String) -> String? {
             try? String(contentsOf: roaming.appending(path: name), encoding: .utf8)
         }
-        #expect(read("note.txt") == "crossover")
-        #expect(Set([read("note.txt BACKUP"), read("note.txt BACKUP 2")].compactMap { $0 })
-                == ["legacy", "steamuser"], "a file that lost to another spelling was dropped")
+        #expect(read("note.txt") == "modern")
+        #expect(read("note.txt BACKUP") == "legacy", "a file that lost to another spelling was dropped")
     }
 
     // The template writes at wineboot, so its copy is always the newer one and the date says
@@ -612,7 +588,7 @@ struct PrefixToolsTests {
         let runner = try fakeRunner(in: dir, home: home)
         let prefix = try usedPrefix(in: dir, home: home)
 
-        let settings = prefix.pfx.appending(path: "drive_c/users/crossover/AppData/wine.ini")
+        let settings = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/wine.ini")
         try fm.createDirectory(
             at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("mine".utf8).write(to: settings)
@@ -640,11 +616,11 @@ struct PrefixToolsTests {
         let prefix = try usedPrefix(in: dir, home: home)
 
         let users = prefix.pfx.appending(path: "drive_c/users")
-        let modern = users.appending(path: "crossover/Documents")
+        let modern = users.appending(path: "steamuser/Documents")
         try fm.removeItem(at: modern)
         try fm.createDirectory(at: modern, withIntermediateDirectories: true)
         try Data("modern".utf8).write(to: modern.appending(path: "modern.txt"))
-        let preVista = users.appending(path: "crossover/My Documents")
+        let preVista = users.appending(path: "steamuser/My Documents")
         try fm.createDirectory(at: preVista, withIntermediateDirectories: true)
         try Data("legacy".utf8).write(to: preVista.appending(path: "legacy.txt"))
 
@@ -660,9 +636,9 @@ struct PrefixToolsTests {
         }
     }
 
-    // A prefix from before this layout has the profile the other way round, with steamuser
-    // the link. A rebuild turns it around so Steam and the game stop reading two folders.
-    @Test("A rebuild brings an older profile onto the steamuser layout")
+    // A profile whose Documents points out at a home folder that has since moved. A rebuild
+    // lays the profile out afresh, so Steam and the game read folders inside the prefix.
+    @Test("A rebuild points the profile's documents back inside the prefix")
     func rebuildPutsBackLinksTheTemplateOmits() throws {
         let (dir, runner, prefix) = try usedPrefixAndRunner()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -670,26 +646,17 @@ struct PrefixToolsTests {
         let users = prefix.pfx.appending(path: "drive_c/users")
 
         try fm.createSymbolicLink(
-            atPath: users.appending(path: "crossover/My Documents").path(percentEncoded: false),
+            atPath: users.appending(path: "steamuser/My Documents").path(percentEncoded: false),
             withDestinationPath: "Documents")
-        try fm.createSymbolicLink(
-            atPath: users.appending(path: "steamuser").path(percentEncoded: false),
-            withDestinationPath: "crossover")
 
         // The old side points Documents somewhere that is no longer where the home folder
         // is, which is what a moved or renamed home leaves behind.
-        try fm.removeItem(at: users.appending(path: "crossover/Documents"))
+        try fm.removeItem(at: users.appending(path: "steamuser/Documents"))
         try fm.createSymbolicLink(
-            atPath: users.appending(path: "crossover/Documents").path(percentEncoded: false),
+            atPath: users.appending(path: "steamuser/Documents").path(percentEncoded: false),
             withDestinationPath: "/somewhere/that/moved")
 
         try PrefixTools.recreate(prefix, runner: runner)
-
-        func target(_ path: String) throws -> String {
-            try fm.destinationOfSymbolicLink(
-                atPath: users.appending(path: path).path(percentEncoded: false))
-        }
-        #expect(try target("crossover") == "steamuser")
 
         // The save came over, and the folder holding it is in the prefix rather than the
         // dangling place the old profile pointed Documents at.
@@ -710,7 +677,7 @@ struct PrefixToolsTests {
     func rebuildKeepsALooseProfileFile() throws {
         let (dir, runner, prefix) = try usedPrefixAndRunner()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let loose = prefix.pfx.appending(path: "drive_c/users/crossover/settings.ini")
+        let loose = prefix.pfx.appending(path: "drive_c/users/steamuser/settings.ini")
         try Data("windowed=1".utf8).write(to: loose)
 
         try PrefixTools.recreate(prefix, runner: runner)
@@ -724,7 +691,7 @@ struct PrefixToolsTests {
     func rebuildKeepsALinkInsideAProfile() throws {
         let (dir, runner, prefix) = try usedPrefixAndRunner()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let game = prefix.pfx.appending(path: "drive_c/users/crossover/AppData/Roaming/game")
+        let game = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/Roaming/game")
         try FileManager.default.createSymbolicLink(
             atPath: game.appending(path: "latest").path(percentEncoded: false),
             withDestinationPath: "save.dat")
@@ -737,25 +704,26 @@ struct PrefixToolsTests {
             atPath: carried.path(percentEncoded: false)) == "save.dat")
     }
 
-    // A link carried across early holds the name a later profile has a real save directory on,
+    // A link carried across early holds the name a later spelling has a real save directory on,
     // and a landing link is what makes the merge give up on a name.
-    @Test("A link from one profile does not take the name another profile's saves land on")
+    @Test("A link walked first does not take the name a later save directory lands on")
     func linksWaitForEveryRealDirectory() throws {
         let (dir, runner, prefix) = try usedPrefixAndRunner()
         defer { try? FileManager.default.removeItem(at: dir) }
         let fm = FileManager.default
-        let roaming = prefix.pfx.appending(path: "drive_c/users/crossover/AppData/Roaming")
+        let profile = prefix.pfx.appending(path: "drive_c/users/steamuser")
+        // AppData is walked ahead of Application Data, which reaches the same folder.
         try fm.createSymbolicLink(
-            atPath: roaming.appending(path: "other").path(percentEncoded: false),
+            atPath: profile.appending(path: "AppData/Roaming/other").path(percentEncoded: false),
             withDestinationPath: "game")
-        let theirs = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/Roaming/other")
+        let theirs = profile.appending(path: "Application Data/other")
         try fm.createDirectory(at: theirs, withIntermediateDirectories: true)
         try Data("theirs".utf8).write(to: theirs.appending(path: "theirs.dat"))
 
         try PrefixTools.recreate(prefix, runner: runner)
 
-        let landed = prefix.pfx.appending(path: "drive_c/users/steamuser/AppData/Roaming/other")
-        // Read through the link the other profile left, the save comes back either way, out of
+        let landed = profile.appending(path: "AppData/Roaming/other")
+        // Read through the link the other spelling left, the save comes back either way, out of
         // a directory holding a second game's files rather than its own.
         #expect(
             (try? landed.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == false)
@@ -802,7 +770,7 @@ struct PrefixToolsTests {
             try? String(contentsOf: prefix.pfx.appending(path: path), encoding: .utf8)
         }
         #expect(text("drive_c/windows/system32/ntdll.dll") == "stale")
-        #expect(text("drive_c/users/crossover/AppData/Roaming/game/save.dat") == "save")
+        #expect(text("drive_c/users/steamuser/AppData/Roaming/game/save.dat") == "save")
         #expect(!fm.fileExists(atPath: prefix.root.appending(path: "pfx.rebuild").path(percentEncoded: false)))
     }
 
@@ -819,7 +787,7 @@ struct PrefixToolsTests {
         let prefix = try usedPrefix(in: dir, home: home)
         let runner = try fakeRunner(in: dir, home: home)
         let save = prefix.pfx
-            .appending(path: "drive_c/users/crossover/AppData/Roaming/game/save.dat")
+            .appending(path: "drive_c/users/steamuser/AppData/Roaming/game/save.dat")
         try fm.setAttributes(
             [.posixPermissions: 0], ofItemAtPath: save.path(percentEncoded: false))
 
@@ -879,7 +847,7 @@ struct PrefixToolsTests {
         try fm.createDirectory(
             at: entry.appending(path: "pfx/drive_c/windows"), withIntermediateDirectories: true)
         let stranded = entry
-            .appending(path: "pfx.previous/drive_c/users/crossover/AppData/Roaming/game/save.dat")
+            .appending(path: "pfx.previous/drive_c/users/steamuser/AppData/Roaming/game/save.dat")
         try fm.createDirectory(
             at: stranded.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("save".utf8).write(to: stranded)
@@ -1085,13 +1053,11 @@ struct PrefixToolsTests {
         #expect(call.lowerBound < settings.lowerBound)
     }
 
-    @Test("The profile link points at steamuser, not out of the prefix")
+    @Test("The profile is steamuser inside the prefix, not a link out of it")
     func profileLinkPointsInward() throws {
         let source = try Self.compatSource()
 
-        // CrossOver fixes the profile name, so crossover is the link and steamuser is
-        // the real directory holding the files Steam syncs.
-        #expect(source.contains(#"ln -s steamuser "$users/crossover""#))
+        #expect(source.contains(#"profile="$users/steamuser""#))
         // The reverse direction is what routed cloud saves out to the mac home.
         #expect(!source.contains(#"ln -s "$profile" "$users/steamuser""#))
     }
@@ -1143,7 +1109,7 @@ struct PrefixToolsTests {
         let prefix = try usedPrefix(in: dir, home: home)
 
         let stranded = prefix.pfx.appending(
-            path: "drive_c/users/crossover/Local Settings/Application Data/Ghost/Saves")
+            path: "drive_c/users/steamuser/Local Settings/Application Data/Ghost/Saves")
         try fm.createDirectory(at: stranded, withIntermediateDirectories: true)
         try Data("cloud".utf8).write(to: stranded.appending(path: "progress.sav"))
 
@@ -1183,7 +1149,7 @@ struct PrefixToolsTests {
         // A call outside the one function that is known to run before wineboot would say
         // nothing about when the aliases are made, so the call has to be within its body.
         let body = try #require(source.range(of: "\n}\n", range: layout.upperBound..<source.endIndex))
-        #expect(layout.upperBound < call.lowerBound && call.upperBound < body.lowerBound)
+        #expect(layout.upperBound < call.lowerBound && call.lowerBound < body.lowerBound)
     }
 
     // Steam stamps a download when it lands, so the legacy copy routinely looks newer. A
@@ -1197,7 +1163,7 @@ struct PrefixToolsTests {
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
         let runner = try fakeRunner(in: dir, home: home)
         let prefix = try usedPrefix(in: dir, home: home)
-        let old = prefix.pfx.appending(path: "drive_c/users/crossover")
+        let old = prefix.pfx.appending(path: "drive_c/users/steamuser")
         // The template points this out to the mac home, which is the escape a rebuild undoes.
         // It has to be a real folder here to hold the game's copy of the save.
         try fm.removeItem(at: old.appending(path: "Documents"))
@@ -1241,8 +1207,8 @@ struct PrefixToolsTests {
         }
     }
 
-    // A dangling link from the first profile holds the name the next profile's real folder lands
-    // on. The name tests free through it while mkdir and copy refuse, so saves went quietly.
+    // A dangling link holds the name a real save folder lands on. The name tests free through
+    // it while mkdir and copy refuse, so saves went quietly.
     @Test("A save survives a landing held by a link to nothing")
     func rebuildReplacesABrokenLandingLink() throws {
         let fm = FileManager.default
@@ -1250,15 +1216,14 @@ struct PrefixToolsTests {
         defer { try? fm.removeItem(at: dir) }
         let home = dir.appending(path: "home")
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
-        let runner = try fakeRunner(in: dir, home: home)
+        // The template holds the name with a link to a folder that is gone.
+        let gone = dir.appending(path: "gone").path(percentEncoded: false)
+        let runner = try fakeRunner(
+            in: dir, home: home,
+            extra: "ln -s \"\(gone)\" \"$WINEPREFIX/drive_c/users/steamuser/AppData/Roaming/Ghost\"")
         let prefix = try usedPrefix(in: dir, home: home)
         let users = prefix.pfx.appending(path: "drive_c/users")
 
-        // crossover is walked first, so its link is already on the name by the time steamuser's
-        // folder of the same name is merged onto it.
-        try fm.createSymbolicLink(
-            at: users.appending(path: "crossover/AppData/Roaming/Ghost"),
-            withDestinationURL: dir.appending(path: "gone"))
         let save = users.appending(path: "steamuser/AppData/Roaming/Ghost/slot1.sav")
         try fm.createDirectory(
             at: save.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -1266,9 +1231,9 @@ struct PrefixToolsTests {
 
         try PrefixTools.recreate(prefix, runner: runner)
 
-        let landed = prefix.pfx
-            .appending(path: "drive_c/users/steamuser/AppData/Roaming/Ghost/slot1.sav")
-        #expect((try? String(contentsOf: landed, encoding: .utf8)) == "precious")
+        #expect((try? String(contentsOf: save, encoding: .utf8)) == "precious")
+        #expect((try? save.deletingLastPathComponent()
+            .resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == false)
     }
 
     @Test("A save survives a link out of the prefix landing on its name")
@@ -1282,22 +1247,21 @@ struct PrefixToolsTests {
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)
         let runner = try fakeRunner(in: dir, home: home)
         let prefix = try usedPrefix(in: dir, home: home)
-        let users = prefix.pfx.appending(path: "drive_c/users")
+        let profile = prefix.pfx.appending(path: "drive_c/users/steamuser")
 
         // A mac home redirect below the profile root, the shape a real bottle has under Desktop.
-        // crossover walks first, so it took the name before steamuser's saves reached the merge.
+        // AppData walks first, so it took the name before Application Data's saves reached the merge.
         try fm.createSymbolicLink(
-            at: users.appending(path: "crossover/AppData/Roaming/Ghost"),
+            at: profile.appending(path: "AppData/Roaming/Ghost"),
             withDestinationURL: outside)
-        let save = users.appending(path: "steamuser/AppData/Roaming/Ghost/slot1.sav")
+        let save = profile.appending(path: "Application Data/Ghost/slot1.sav")
         try fm.createDirectory(
             at: save.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("precious".utf8).write(to: save)
 
         try PrefixTools.recreate(prefix, runner: runner)
 
-        let landed = prefix.pfx
-            .appending(path: "drive_c/users/steamuser/AppData/Roaming/Ghost/slot1.sav")
+        let landed = profile.appending(path: "AppData/Roaming/Ghost/slot1.sav")
         #expect((try? String(contentsOf: landed, encoding: .utf8)) == "precious")
         #expect(!fm.fileExists(atPath: outside.appending(path: "slot1.sav").path(percentEncoded: false)))
     }
@@ -1343,7 +1307,7 @@ struct PrefixToolsTests {
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
 
         let prefix = try usedPrefix(in: dir, home: home)
-        let old = prefix.pfx.appending(path: "drive_c/users/crossover/\(oldPath)")
+        let old = prefix.pfx.appending(path: "drive_c/users/steamuser/\(oldPath)")
         try fm.createDirectory(at: old.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(contents.utf8).write(to: old)
 
@@ -1394,21 +1358,19 @@ struct PrefixToolsTests {
 @Suite("Which build last ran a prefix")
 struct PrefixLastBuildTests {
 
-    private static let release = "26.3.0.39832"
-    private static let preview = "27.0.0.40921-fex"
+    // The shipped build, and a build Hadron no longer serves whose copy is still on disk.
+    private static let current = shippedRuntimeID
+    private static let older = "wine-0.1"
 
     private func makeWorld() throws -> (dir: URL, runners: URL, prefix: WinePrefix) {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appending(path: "np-lastbuild-\(UUID().uuidString)")
         let runners = dir.appending(path: "runners")
-        for (build, time) in [(Self.release, 1_784_112_240), (Self.preview, 1_787_334_674)] {
-            let inf = SupportPaths.clonedRoot(forBuild: build, runners: runners)
-                .appending(path: "share/wine/wine.inf")
-            try fm.createDirectory(at: inf.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data().write(to: inf)
+        for (build, time) in [(Self.older, 1_784_112_240), (Self.current, 1_787_334_674)] {
+            let root = try makeInstalledRuntime(in: runners, id: build, wineInf: true)
             try fm.setAttributes(
                 [.modificationDate: Date(timeIntervalSince1970: TimeInterval(time))],
-                ofItemAtPath: inf.path(percentEncoded: false))
+                ofItemAtPath: root.appending(path: "share/wine/wine.inf").path(percentEncoded: false))
         }
         let prefix = WinePrefix(
             appID: "480", name: nil, library: SteamLibrary(root: dir.appending(path: "Steam")), lastUsed: nil)
@@ -1418,6 +1380,11 @@ struct PrefixLastBuildTests {
 
     private func updated(_ prefix: WinePrefix, _ text: String) throws {
         try text.write(to: prefix.pfx.appending(path: ".update-timestamp"), atomically: true, encoding: .utf8)
+    }
+
+    private func record(_ prefix: WinePrefix, _ text: String) throws {
+        try text.write(
+            to: prefix.root.appending(path: PrefixTools.buildRecordName), atomically: true, encoding: .utf8)
     }
 
     @Test("A prefix with nothing to read from belongs to no build yet")
@@ -1430,18 +1397,23 @@ struct PrefixLastBuildTests {
         #expect(PrefixTools.lastBuild(of: prefix, runners: runners) == nil)
     }
 
-    @Test("Without a record, the clone whose wine.inf matches is the build")
+    @Test("Without a record, the runtime whose wine.inf matches is the build")
     func readsTheWineThatUpdatedIt() throws {
         let (dir, runners, prefix) = try makeWorld()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         try updated(prefix, "1787334674\n")
         #expect(PrefixTools.lastBuild(of: prefix, runners: runners)
-            == PrefixBuildRecord(build: Self.preview, display: nil))
+            == PrefixBuildRecord(build: Self.current, display: nil))
+
+        try updated(prefix, "1784112240\n")
+        #expect(PrefixTools.lastBuild(of: prefix, runners: runners)
+            == PrefixBuildRecord(build: Self.older, display: nil))
 
         try updated(prefix, "12345\n")
         let unknown = try #require(PrefixTools.lastBuild(of: prefix, runners: runners))
         #expect(unknown.build.isEmpty)
+        #expect(unknown.display == "an earlier Wine runtime")
     }
 
     @Test("A record outranks the Wine that last updated the prefix")
@@ -1450,10 +1422,21 @@ struct PrefixLastBuildTests {
         defer { try? FileManager.default.removeItem(at: dir) }
 
         try updated(prefix, "1787334674\n")
-        try "\(Self.release)\nCrossOver 26.3\n".write(
-            to: prefix.root.appending(path: PrefixTools.buildRecordName), atomically: true, encoding: .utf8)
+        try record(prefix, "\(Self.older)\nHadron Wine 0.1\n")
         #expect(PrefixTools.lastBuild(of: prefix, runners: runners)
-            == PrefixBuildRecord(build: Self.release, display: "CrossOver 26.3"))
+            == PrefixBuildRecord(build: Self.older, display: "Hadron Wine 0.1"))
+    }
+
+    @Test("Setting a prefix up records the tool that built it")
+    func writesTheRecord() throws {
+        let (dir, runners, prefix) = try makeWorld()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tool = try #require(SupportedRunners.tools(for: [shippedRuntime]).first)
+
+        try PrefixTools.writeBuildRecord(tool, for: prefix)
+
+        #expect(PrefixTools.buildRecord(of: prefix) == PrefixBuildRecord(build: Self.current, display: tool.display))
+        #expect(PrefixTools.tool(for: prefix, among: [tool], runners: runners) == tool)
     }
 
     @Test("A tool of the other arch is never picked for a prefix")
@@ -1462,34 +1445,33 @@ struct PrefixLastBuildTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let system32 = prefix.pfx.appending(path: "drive_c/windows/system32")
         try FileManager.default.createDirectory(at: system32, withIntermediateDirectories: true)
+        // A prefix's own ntdll.dll, read for its PE machine word: this one is x86_64.
         var header = [UInt8](repeating: 0, count: 0x40)
         header[0x3c] = 0x40
         try Data(header + [0x50, 0x45, 0, 0, 0x64, 0x86])
             .write(to: system32.appending(path: "ntdll.dll"))
-        try "\(Self.preview)\nCrossOver Preview (Rosetta)\n".write(
-            to: prefix.root.appending(path: PrefixTools.buildRecordName), atomically: true, encoding: .utf8)
+        // The record names an arm64 tool of this build, which this prefix cannot run.
+        try record(prefix, "\(Self.current)\nHadron Wine 11.15 (FEX)\n")
 
         let fexOnly = [InstalledTool(
-            tool: CompatTool(name: "notproton", flavor: .fex, display: "CrossOver Preview (FEX)"),
-            build: Self.preview)]
+            tool: CompatTool(name: "notproton-wine-fex", flavor: .fex, display: "Hadron Wine 11.15 (FEX)"),
+            build: Self.current)]
         #expect(PrefixTools.tool(for: prefix, among: fexOnly, runners: runners) == nil)
 
-        let fex = try #require(SupportedRunners.all.first { $0.id == Self.preview })
-        let both = SupportedRunners.tools(for: [fex])
-        #expect(PrefixTools.tool(for: prefix, among: both, runners: runners)?.name == "notproton-fex-rosetta")
+        let both = fexOnly + SupportedRunners.tools(for: [shippedRuntime])
+        #expect(PrefixTools.tool(for: prefix, among: both, runners: runners)?.name == "notproton-wine")
     }
 
-    @Test("A prefix another CrossOver updated gets no tool, so nothing runs over it")
+    @Test("A prefix another Wine updated gets no tool, so nothing runs over it")
     func noToolForAnotherWine() throws {
         let (dir, runners, prefix) = try makeWorld()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let release = try #require(SupportedRunners.all.first { $0.id == Self.release })
-        let tools = SupportedRunners.tools(for: [release])
-
-        try updated(prefix, "1787334674\n")
-        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners) == nil)
+        let tools = SupportedRunners.tools(for: [shippedRuntime])
 
         try updated(prefix, "1784112240\n")
-        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners)?.build == Self.release)
+        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners) == nil)
+
+        try updated(prefix, "1787334674\n")
+        #expect(PrefixTools.tool(for: prefix, among: tools, runners: runners)?.build == Self.current)
     }
 }

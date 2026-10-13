@@ -15,12 +15,13 @@ for (const form of Object.keys(FORMS)) {
   for (const [chinese, cases] of [[true, zhCases], [false, enCases]]) {
     for (const globals of cases) {
       const { render, written } = panel(emit, form, globals);
-      const nodes = walk(render({ details: details('CX_GRAPHICS_BACKEND=dxmt %command%') }));
+      const nodes = walk(render({ details: details('NOTPROTON_GRAPHICS=dxmt %command%') }));
       const dropdowns = nodes.filter(n => n.type === 'Dropdown');
-      assert.equal(dropdowns[0].props.rgOptions[0].label, chinese ? '自动' : 'Automatic');
+      assert.equal(dropdowns[0].props.rgOptions[1].label,
+        chinese ? 'WineD3D（Wine 自带的 Direct3D）' : "WineD3D (Wine's own Direct3D)");
       assert.equal(dropdowns[1].props.rgOptions[0].label, chinese ? '关闭' : 'Off');
       assert.deepEqual(dropdowns[0].props.rgOptions.map(o => o.data),
-        ['', 'd3dmetal', 'dxmt', 'dxvk', 'wined3d']);
+        ['dxmt', 'wined3d']);
       assert(nodes.some(n => n.props.label === (chinese ? '图形' : 'Graphics')));
       assert(nodes.some(n => n.props.label === (chinese
         ? '控制器（可能导致 Steam Input 失效，不推荐）'
@@ -28,13 +29,13 @@ for (const form of Object.keys(FORMS)) {
       const raw = nodes.find(n => n.props.label === (chinese
         ? '允许游戏直接读取控制器' : 'Let games read controllers directly'));
       raw.props.onChange(true);
-      assert.equal(written.at(-1).opts, 'NOTPROTON_RAW_CONTROLLERS=1 CX_GRAPHICS_BACKEND=dxmt %command%');
+      assert.equal(written.at(-1).opts, 'NOTPROTON_RAW_CONTROLLERS=1 NOTPROTON_GRAPHICS=dxmt %command%');
       const hud = nodes.find(n => n.props.label === (chinese ? 'Metal 性能监视器' : 'Metal HUD'));
       hud.props.onChange(true);
-      assert.equal(written.at(-1).opts, 'MTL_HUD_ENABLED=1 CX_GRAPHICS_BACKEND=dxmt %command%');
+      assert.equal(written.at(-1).opts, 'MTL_HUD_ENABLED=1 NOTPROTON_GRAPHICS=dxmt %command%');
       for (const [mode, en, zh] of [
-        ['compat-hint', 'Enable CrossOver under Properties > Compatibility to install and run the Windows version.',
-          '请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。'],
+        ['compat-hint', 'Enable Hadron under Properties > Compatibility to install and run the Windows version.',
+          '请在“属性 > 兼容性”中启用 Hadron，以安装并运行 Windows 版本。'],
         ['image-files-label', 'Image Files (*.tga,*.png,*.exe)', '图像文件 (*.tga,*.png,*.exe)'],
       ]) {
         const src = execFileSync(emit, [mode], { encoding: 'utf8' });

@@ -70,10 +70,6 @@ enum SteamInstaller {
         modifications: SteamModifications = .shared,
         runnerIsRunning: @Sendable (URL) -> Bool = { RunnerInstaller.isRunning(from: $0) },
         verifyRunner: (RunnerBuild, URL) throws -> Void = RunnerInstaller.verifyClone,
-        patchRunner: (RunnerBuild, URL, URL) throws -> Void = { build, root, bridge in
-            _ = try NtdllPatcher.stage(build: build, runnerRoot: root, bridge: bridge)
-            _ = try RunnerPatcher.install(build: build, root: root, bridge: bridge)
-        },
         stopClient: ClientStopper = stopTheClient,
         register: BundleRegistrar = { SteamBundle.register($0) },
         resetInputAccess: () -> Void = resetInputAccess,
@@ -118,7 +114,7 @@ enum SteamInstaller {
         try refuseRunningRunners()
         let builds = RunnerStore.installedBuilds(in: runners)
         for build in builds {
-            try verifyRunner(build, SupportPaths.clonedRoot(forBuild: build.id, runners: runners))
+            try verifyRunner(build, SupportPaths.runnerRoot(forBuild: build.id, runners: runners))
         }
         try modifications.mark(app)
         let patching = try needsPatching(plist: plist, dylib: dylib, shipping: payload.dylib, app: app)
@@ -135,14 +131,10 @@ enum SteamInstaller {
             stopped = try stopClient(app) { report(.stoppingClient) }
         }
         try refuseRunningRunners()
-        _ = try CompatToolList.sync(runners: runners, bridge: bridge,
-                                   file: support.appending(path: "tools"), compatTools: compatTools)
+        _ = try CompatToolList.sync(runners: runners, file: support.appending(path: "tools"))
 
         report(.stagingBridge)
         let bridgeResult = try BridgePayload.stage(located: bridgeLocated, bridge: bridge)
-        for build in builds {
-            try patchRunner(build, SupportPaths.clonedRoot(forBuild: build.id, runners: runners), bridge)
-        }
 
         if patching {
             report(.copyingDylib)

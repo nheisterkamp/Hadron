@@ -10,21 +10,22 @@ struct PayloadManifestTests {
     func shippedManifestIsComplete() throws {
         let manifest = try PayloadManifest.bundled()
 
-        #expect(manifest.entries.count == 20)
-        #expect(manifest.paths(origin: .built).count == 7)
-        #expect(manifest.paths(origin: .patched).count == 3)
+        #expect(manifest.entries.count == 16)
+        #expect(manifest.paths(origin: .built).count == 6)
         #expect(manifest.paths(origin: .valve).count == 10)
 
         // Every payload file is fetchable from Valve or produced here, which is what dropping
-        // the steam_api pair bought. A fourth origin would mean a file with no way to get it.
+        // the steam_api pair bought. A third origin would mean a file with no way to get it.
         #expect(PayloadOrigin.allCases.filter(\.isFetchable) == [.valve])
-        #expect(PayloadOrigin.allCases.count == 3)
+        #expect(PayloadOrigin.allCases == [.built, .valve])
 
-        #expect(Set(manifest.paths(origin: .patched)) == [
-            "wine/i386-windows/ntdll.dll",
-            "wine/x86_64-windows/ntdll.dll",
-            "wine/aarch64-windows/ntdll.dll",
+        // The bridge carries lsteamclient for the arches a runtime builds, and nothing that
+        // goes into the runtime itself.
+        #expect(Set(manifest.paths(origin: .built)) == [
+            "lsteamclient.dll", "lsteamclient.so", "steam.exe",
+            "i386-windows/lsteamclient.dll", "x86_64-windows/lsteamclient.dll", "x86_64-unix/lsteamclient.so",
         ])
+        #expect(!manifest.entries.contains { $0.path.hasPrefix("wine/") })
     }
 
     @Test("Every entry is a relative path inside the bridge")
@@ -88,14 +89,12 @@ struct PayloadInspectionTests {
             try Data().write(to: file)
         }
 
-        let fex = try #require(SupportedRunners.all.first { $0.flavor == "fex" })
-        let state = PayloadInspector.inspect(bridge: bridge, builds: [fex])
+        let state = PayloadInspector.inspect(bridge: bridge)
         #expect(state.manifestProblem == nil)
-        #expect(state.expected == 20)
+        #expect(state.expected == 16)
         #expect(state.present == 10)
         #expect(state.missing(origin: .valve).isEmpty)
-        #expect(state.missing(origin: .built).count == 7)
-        #expect(state.missing(origin: .patched).count == 3)
+        #expect(state.missing(origin: .built).count == 6)
         #expect(!state.isComplete)
     }
 }

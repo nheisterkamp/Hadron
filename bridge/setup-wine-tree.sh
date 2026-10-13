@@ -3,13 +3,13 @@
 #
 #   ./setup-wine-tree.sh   create and configure, skipping whatever is already done
 #
-# CrossOver ships a runtime-only Wine with no winegcc or winebuild, so lsteamclient
-# and the steam.exe shim are built in a wine source tree and staged into the bridge
-# unsigned.
+# lsteamclient and the steam.exe shim are built in a wine source tree and staged into
+# the bridge unsigned. runtime/build-wine.sh builds the Wine runtime itself from the
+# same tree.
 #
-# The base is stock Wine 11.15, the version the CrossOver runtime is built from
-# (wine-11.15-8895-g32f409fef6a). ntdll from a different vintage speaks a different
-# server protocol and the shipped loader refuses to boot it.
+# The base is stock Wine 11.15, the version the runtime is built from. ntdll from a
+# different vintage speaks a different server protocol and the loader refuses to
+# boot it.
 #
 # A unix half loads into the wine loader's own process and has to match its arch. The
 # rosetta loader is x86_64, which on an Apple Silicon host needs the cross configure

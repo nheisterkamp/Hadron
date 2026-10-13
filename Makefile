@@ -66,7 +66,7 @@ DEPS := $(OBJS:.o=.d)
         anchorcheck callscheck sigdb-fixtures webpatch-fixtures peicon-fixtures panel-behavior app-tests \
         tests-list overlay-shim overlay-shim-install overlay-shim-tests \
         overlay-shim-bench iconmaker icon \
-        appinfo helpers-install ntdll-resolve bridge runcheck compatcheck \
+        appinfo helpers-install bridge runtime runcheck compatcheck \
         compatsvc-check shortcutcheck scriptcheck envcheck buildcheck settingscheck routecheck bridgecheck gamedrivecheck launchercheck launch-shell FORCE
 
 APP_PAYLOAD := app/Sources/NotProtonApp/Resources/payload
@@ -351,17 +351,6 @@ panel-behavior:
 	node $(PANEL_TESTS)/fex.js $(OUT_DIR)/panel-emit && \
 	echo "==> panel behavior: renders as expected, no stale arguments"
 
-CX_ROOT ?= /Applications/CrossOver Preview.app
-
-ntdll-resolve:
-	@if [ ! -f ntdll-patch/resolve.py ]; then \
-		$(call SKIP,ntdll-resolve,ntdll-patch/resolve.py); exit 0; fi; \
-	if ! python3 -c 'import capstone' >/dev/null 2>&1; then \
-		echo "==> ntdll-resolve: capstone not found, skipped (pip3 install capstone)"; exit 0; fi; \
-	if [ ! -d "$(CX_ROOT)" ]; then \
-		echo "==> ntdll-resolve: $(CX_ROOT) not present, skipped (set CX_ROOT)"; exit 0; fi; \
-	python3 ntdll-patch/resolve.py "$(CX_ROOT)"
-
 $(ARM64_DYLIB): $(OBJS)
 	@mkdir -p $(dir $@)
 	$(CC) $(LDFLAGS) -o $@ $^ $(DOBBY_LIBS) $(FRAMEWORKS) -lc++
@@ -530,23 +519,22 @@ deploy: $(TARGET) dylib-install sigdb-install fonts-install helpers-install
 
 WINE_BUILD := scratch/wine-build-dual
 
-WINE_BUILD_ARM64 := scratch/wine-build-arm64
-
 BRIDGE_FILES := \
 	$(WINE_BUILD)/programs/steam.exe/x86_64-windows/steam.exe:steam.exe \
 	$(WINE_BUILD)/dlls/lsteamclient/x86_64-windows/lsteamclient.dll:x86_64-windows-lsteamclient.dll \
 	$(WINE_BUILD)/dlls/lsteamclient/lsteamclient.so:x86_64-unix-lsteamclient.so \
-	$(WINE_BUILD_ARM64)/dlls/lsteamclient/lsteamclient.so:aarch64-unix-lsteamclient.so \
 	$(WINE_BUILD)/dlls/lsteamclient/i386-windows/lsteamclient.dll:i386-windows-lsteamclient.dll
 
 bridge:
 	bridge/setup-wine-tree.sh
-	WINE_BUILD="$(CURDIR)/$(WINE_BUILD_ARM64)" HOST=aarch64-apple-darwin \
-		HOST_CC="clang -arch arm64" HOST_CXX="clang++ -arch arm64" bridge/setup-wine-tree.sh
 	lsteamclient/build.sh
-	UNIX_ARCH=arm64 WINE_BUILD="$(CURDIR)/$(WINE_BUILD_ARM64)" lsteamclient/build.sh --unix
 	steam-shim/build.sh
 	@echo "==> Built the bridge, now run: $(MAKE) app-payload"
+
+# The Wine runtime the app sets up as the compatibility tool, see runtime/build-wine.sh.
+runtime:
+	bridge/setup-wine-tree.sh
+	runtime/build-wine.sh
 
 fonts:
 	fonts/build.sh

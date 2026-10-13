@@ -25,10 +25,10 @@ const FORMS = {
   statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
 };
 
-// `fallback` and `fexTools` stand in for what the hook sets before the transform.
+// `fallback` stands in for what the hook sets before the transform.
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
-               { fallback = 'notproton', fexTools = [] } = {}) {
-  const raw = execFileSync(emit, [form, fallback, ...fexTools], { encoding: 'utf8' }).trim();
+               { fallback = 'notproton' } = {}) {
+  const raw = execFileSync(emit, [form, fallback], { encoding: 'utf8' }).trim();
   const src = form === 'component'
     ? 'var ' + raw.replace(/,$/, '')
     : expand(raw).replace(/;$/, '');
@@ -37,7 +37,7 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
   const SteamClient = {
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
   };
-  const build = new Function(f.react, f.barrel, 'SteamClient', 'globalThis', src + '\nreturn MSCXOpts;');
+  const build = new Function(f.react, f.barrel, 'SteamClient', 'globalThis', src + '\nreturn NPHadronOpts;');
   return { render: build(react, barrel, SteamClient, globals), written };
 }
 

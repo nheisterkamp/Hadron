@@ -120,13 +120,13 @@ struct PrefixStoreTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let library = SteamLibrary(root: dir)
 
-        // CrossOver's template points Documents at the real home. Sizing that would tell the user
+        // Wine's template points Documents at the real home. Sizing that would tell the user
         // a prefix costs everything in their home folder, which makes the warning worthless.
         let outside = dir.appending(path: "outside-the-prefix")
         try write("host file one", to: outside.appending(path: "one.txt"))
         try write("host file two", to: outside.appending(path: "two.txt"))
 
-        let profile = library.compatdata.appending(path: "1574480/pfx/drive_c/users/crossover")
+        let profile = library.compatdata.appending(path: "1574480/pfx/drive_c/users/steamuser")
         try write("in prefix", to: profile.appending(path: "AppData/Roaming/game/save.dat"))
         try FileManager.default.createSymbolicLink(
             at: profile.appending(path: "Documents"), withDestinationURL: outside)
@@ -163,7 +163,7 @@ struct PrefixStoreTests {
         let clone = dir.appending(path: "clone")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         let bytes = Data((0..<(4 << 20)).map { UInt8(truncatingIfNeeded: $0 &* 2_654_435_761 >> 13) })
-        try bytes.write(to: source.appending(path: "ntdll.dll"))
+        try bytes.write(to: source.appending(path: "system.reg"))
         try #require(
             clonefile(source.path(percentEncoded: false), clone.path(percentEncoded: false), 0) == 0,
             "scratch volume cannot clone")
@@ -256,7 +256,7 @@ struct PrefixStoreTests {
         let fm = FileManager.default
 
         let entry = library.compatdata.appending(path: "1574480")
-        for folder in ["pfx", "pfx.rebuild", "notproton-msync",
+        for folder in ["pfx", "pfx.rebuild", "notproton-run.log",
                        "pfx.previous-20260101-120000", "pfx.previous-20260102-133000"] {
             try fm.createDirectory(
                 at: entry.appending(path: folder), withIntermediateDirectories: true)
@@ -308,7 +308,7 @@ struct PrefixStoreTests {
         let library = SteamLibrary(root: dir)
 
         let entry = library.compatdata.appending(path: "1574480")
-        try write("live", to: entry.appending(path: "pfx/drive_c/users/crossover/save.dat"))
+        try write("live", to: entry.appending(path: "pfx/drive_c/users/steamuser/save.dat"))
         try write("older", to: entry.appending(path: "pfx.previous-20260101-120000/user.reg"))
         try write("newer", to: entry.appending(path: "pfx.previous-20260102-133000-2/user.reg"))
 

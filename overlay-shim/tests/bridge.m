@@ -9,7 +9,7 @@ typedef id (*new_fn)(id, SEL);
 typedef id (*dev_fn)(id, SEL);
 typedef void (*sig_fn)(id, SEL, id, uint64_t);
 
-// The overlay hooks Metal 3 present, but D3DMetal 4 presents on a Metal 4
+// The overlay hooks Metal 3 present, but a Metal 4 renderer presents on a Metal 4
 // queue, so this has to bridge the two with a shared event.
 int main(void)
 {

@@ -36,31 +36,34 @@ struct ShimAgreementTests {
         }
     }
 
-    @Test("The shim checks the ntdll arches the app patches")
-    func ntdllArchesAgree() throws {
-        let lists = Self.archLists(in: try Self.verifyRunnerBlock())
-        #expect(lists.count == 2)
-        #expect(lists.first == Set(WineArch.allCases.map(\.rawValue)))
-    }
-
-    @Test("The shim checks the builtins the app installs")
+    @Test("The shim checks the builtins the app checks")
     func builtinsAgree() throws {
         let block = try Self.verifyRunnerBlock()
         let lists = Self.archLists(in: block)
 
-        #expect(lists.count == 2)
+        #expect(lists.count == 1)
 
         // The windows halves are named literally. The unix one is whichever arch directory the
         // loader turned up in, so both sides resolve that rather than naming a fixed arch.
-        let arches = try #require(lists.last)
+        let arches = try #require(lists.first)
         let unix = "\"${wine_unix##*/}\""
         #expect(arches.contains(unix))
-        #expect(arches.subtracting([unix]) == Set(RunnerPatcher.windowsBuiltins.map(\.arch)))
+        let windows = RunnerInstaller.builtins.filter { $0.arch.hasSuffix("-windows") }
+        #expect(arches.subtracting([unix]) == Set(windows.map(\.arch)))
 
-        for builtin in RunnerPatcher.windowsBuiltins {
+        for builtin in RunnerInstaller.builtins {
             #expect(block.contains(builtin.name))
         }
-        #expect(block.contains("lsteamclient.so"))
+        #expect(block.contains("$np_root/lib/wine/$arch/$name"))
+    }
+
+    @Test("The shim's unix arch is the one the app checks and loads from")
+    func unixArchAgrees() throws {
+        let script = try Self.runScript()
+        let unix = try #require(RunnerInstaller.builtins.first { $0.arch.hasSuffix("-unix") })
+        #expect(script.contains("wine_unix=\"$np_root/lib/wine/\(unix.arch)\""))
+        #expect(RuntimeSource.unixLoader(inRoot: URL(filePath: "/R")).path(percentEncoded: false)
+            == "/R/lib/wine/\(unix.arch)/wine")
     }
 
     // A runner write left in the shim is the layout problem coming back: writing into the
@@ -70,7 +73,7 @@ struct ShimAgreementTests {
         let script = try Self.runScript()
         for line in script.split(separator: "\n") {
             let writes = line.contains("cp -f") || line.contains("codesign ")
-            guard writes, line.contains("$CX_ROOT") else { continue }
+            guard writes, line.contains("$np_root") else { continue }
             Issue.record("RUN_SCRIPT writes into the runner: \(line.trimmingCharacters(in: .whitespaces))")
         }
     }

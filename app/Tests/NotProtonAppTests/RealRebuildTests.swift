@@ -11,8 +11,9 @@ enum RealPrefixes {
             .appending(path: "Library/Application Support/Steam"))
     }
 
-    // One prefix per profile shape: steamuser real, steamuser linked, and both real, which is
-    // the shape a save was lost from. All three have to come out on the steamuser layout.
+    // One prefix per profile shape: steamuser real, steamuser linked, and steamuser real beside
+    // another real profile, which is the shape a save was lost from. Every profile has to come
+    // out under its own name, with steamuser a real directory.
     static var tool: InstalledTool? { CompatToolList.installed().first }
 
     static var candidates: [WinePrefix] {
@@ -38,7 +39,10 @@ enum RealPrefixes {
             if values.isSymbolicLink == true {
                 linked = linked ?? prefix
             } else if values.isDirectory == true {
-                if realDirectory(users.appending(path: "crossover")) {
+                let others = ((try? FileManager.default.contentsOfDirectory(
+                    at: users, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { !["steamuser", "Public"].contains($0.lastPathComponent) && realDirectory($0) }
+                if !others.isEmpty {
                     split = split ?? prefix
                 } else {
                     real = real ?? prefix
@@ -102,14 +106,14 @@ struct RealRebuildTests {
             try PrefixTools.recreate(prefix, as: tool)
             let after = inventory(prefix.pfx)
 
-            // Both profile names fold to one directory after a rebuild, as do the documents names
-            // and BACKUP, which parks shared saves. That also hides a BACKUP the player made.
+            // Each profile keeps its name, but the documents names fold to one directory after a
+            // rebuild, as does BACKUP, which parks shared saves. That also hides a BACKUP the
+            // player made.
             func normalised(_ paths: [String]) -> Set<String> {
                 Set(paths.map { path in
                     var parts = path.split(separator: "/").map(String.init)
                     guard !parts.isEmpty else { return path }
                     parts = parts.map { $0.replacing(#/ BACKUP( \d+)?$/#, with: "") }
-                    parts[0] = "profile"
                     if parts.count > 1, ["Documents", "My Documents"].contains(parts[1]) {
                         parts[1] = "documents"
                     }
@@ -121,13 +125,9 @@ struct RealRebuildTests {
             #expect(try Data(contentsOf: prefix.pfx.appending(path: "user.reg")) == registry)
             #expect(try Data(contentsOf: stray) == Data("exe".utf8), "\(prefix.appID) lost C:\\Games")
 
-            // Steam resolves a cloud rule under steamuser and CrossOver reads the name it fixes
-            // on, so the one has to be the directory and the other the link to it.
+            // Steam resolves a cloud rule under steamuser, so that has to be a real directory.
             let users = prefix.pfx.appending(path: "drive_c/users")
-            let crossover = users.appending(path: "crossover")
             let steamuser = users.appending(path: "steamuser")
-            #expect(try FileManager.default.destinationOfSymbolicLink(
-                atPath: crossover.path(percentEncoded: false)) == "steamuser")
             #expect((try? steamuser.resourceValues(forKeys: [.isSymbolicLinkKey]))?
                 .isSymbolicLink != true)
 
@@ -151,6 +151,7 @@ struct RealRebuildTests {
                         "\(prefix.appID) resolves \(folder) to \(resolved)")
             }
 
+            // The prefix's own ntdll.dll, which its arch is read from.
             let ntdll = prefix.pfx.appending(path: "drive_c/windows/system32/ntdll.dll")
             #expect(PrefixStore.arch(of: prefix) == tool.tool.prefixArch)
             #expect(PrefixTools.buildRecord(of: prefix)?.build == tool.build)

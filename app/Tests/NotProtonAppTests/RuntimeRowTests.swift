@@ -3,178 +3,156 @@ import Testing
 
 @testable import NotProtonApp
 
-@Suite("CrossOver rows on the Status pane")
-struct CrossOverRowTests {
+@Suite("Runtime rows on the Status pane")
+struct RuntimeRowTests {
 
-    private static let preview = SupportedRunners.all.first { $0.flavor == "fex" }!
-    private static let release = SupportedRunners.all.first { $0.id == "26.3.0.39832" }!
-
-    private func install(_ name: String, _ build: RunnerBuild, root: String = "/Applications") -> CrossOverInstall {
-        CrossOverInstall(bundle: URL(filePath: "\(root)/\(name).app"), releaseVersion: "x", support: .supported(build))
+    private func install(
+        _ name: String, _ support: RuntimeSupport = .supported(shippedRuntime),
+        root: String = "/runtimes", isManual: Bool = false
+    ) -> RuntimeInstall {
+        RuntimeInstall(root: URL(filePath: "\(root)/\(name)", directoryHint: .isDirectory),
+                       support: support, isManual: isManual)
     }
 
     private func rows(
-        _ installs: [CrossOverInstall],
+        _ installs: [RuntimeInstall],
         installed: [RunnerBuild] = [],
         damaged: [String] = [],
         orphaned: [String] = [],
-        unpatched: [String] = [],
-        unlicensed: Set<String> = []
-    ) -> [CrossOverRow] {
-        var licenses: [String: CrossOverLicense.Status] = [:]
-        for install in installs {
-            licenses[install.id] = CrossOverLicense.Status(
-                licensed: !unlicensed.contains(install.id), detail: "", diagnostic: "test"
-            )
-        }
-        return CrossOverRow.rows(
-            installs: installs, licenses: licenses, installed: installed,
-            damaged: damaged, orphaned: orphaned, unpatched: unpatched
+        incomplete: [String] = []
+    ) -> [RuntimeRow] {
+        RuntimeRow.rows(
+            installs: installs, installed: installed,
+            damaged: damaged, orphaned: orphaned, incomplete: incomplete
         )
     }
 
-    @Test("Each app gets its own row, tied to its own build")
-    func oneRowPerApp() {
-        let preview = install("CrossOver Preview", Self.preview)
-        let release = install("CrossOver", Self.release)
+    @Test("A runtime with no copy yet can be set up")
+    func runtimeWithoutCopy() {
+        let runtime = install("wine")
 
-        let made = rows([preview, release], installed: [Self.preview, Self.release])
-
-        #expect(made.map(\.install?.id) == [preview.id, release.id])
-        #expect(made.map(\.buildID) == [Self.preview.id, Self.release.id])
-        #expect(made.allSatisfy { $0.copy == .ready && $0.canSetUp })
-    }
-
-    @Test("An app with no copy yet can be set up, and its license shows on the row")
-    func appWithoutCopy() {
-        let release = install("CrossOver", Self.release)
-
-        let made = rows([release], unlicensed: [release.id])
+        let made = rows([runtime])
 
         #expect(made.count == 1)
         #expect(made[0].copy == .none)
-        #expect(made[0].licensed == false)
+        #expect(made[0].buildID == shippedRuntimeID)
+        #expect(made[0].install?.id == runtime.id)
         #expect(made[0].canSetUp)
+        #expect(made[0].title == runtime.name)
+        #expect(made[0].build == shippedRuntime)
     }
 
-    @Test("A copy whose app is gone keeps a row that cannot be recopied")
-    func copyWithoutApp() {
-        let made = rows([], installed: [Self.release])
+    @Test("A runtime with its copy installed is ready")
+    func readyCopy() {
+        let runtime = install("wine")
+
+        let made = rows([runtime], installed: [shippedRuntime])
+
+        #expect(made.map(\.copy) == [.ready])
+        #expect(made[0].canSetUp)
+        #expect(made[0].id == runtime.id)
+    }
+
+    @Test("A copy whose runtime folder is gone keeps a row that cannot be recopied")
+    func copyWithoutRuntime() {
+        let made = rows([], installed: [shippedRuntime])
 
         #expect(made.count == 1)
         #expect(made[0].install == nil)
         #expect(made[0].copy == .ready)
         #expect(!made[0].canSetUp)
-        #expect(made[0].title == "CrossOver \(Self.release.displayVersion)")
+        #expect(made[0].title == "Hadron \(shippedRuntime.displayVersion)")
+        #expect(made[0].id == shippedRuntimeID)
     }
 
-    @Test("Damaged, unpatched and unsupported copies are marked on their own rows")
-    func problemCopies() {
-        let preview = install("CrossOver Preview", Self.preview)
-        let release = install("CrossOver", Self.release)
+    @Test("A copy missing a built-in is incomplete, even though it is installed")
+    func incompleteCopy() {
+        let made = rows([install("wine")], installed: [shippedRuntime], incomplete: [shippedRuntimeID])
 
+        #expect(made.map(\.copy) == [.incomplete])
+        #expect(made[0].canSetUp)
+    }
+
+    @Test("A damaged copy is marked on the runtime's row, or on its own when the runtime is gone")
+    func damagedCopy() {
+        #expect(rows([install("wine")], damaged: [shippedRuntimeID]).map(\.copy) == [.damaged])
+
+        let alone = rows([], damaged: [shippedRuntimeID])
+        #expect(alone.map(\.copy) == [.damaged])
+        #expect(alone[0].install == nil)
+        #expect(!alone[0].canSetUp)
+    }
+
+    @Test("A copy of a build Hadron no longer serves is unsupported, on its own row")
+    func orphanedCopy() {
+        let made = rows([install("wine")], installed: [shippedRuntime], orphaned: ["wine-0.1"])
+
+        #expect(made.map(\.copy) == [.ready, .unsupported])
+        #expect(made[1].buildID == "wine-0.1")
+        #expect(made[1].install == nil)
+        #expect(made[1].build == nil)
+        #expect(made[1].title == "Hadron wine-0.1")
+        #expect(!made[1].canSetUp)
+    }
+
+    @Test("Every copy state on one pane, in order")
+    func everyState() {
         let made = rows(
-            [preview, release], installed: [Self.preview], damaged: [Self.release.id],
-            orphaned: ["25.0.0.1"], unpatched: [Self.preview.id]
+            [install("wine"), install("old", .unsupportedBuild("wine-0.2"))],
+            installed: [shippedRuntime], orphaned: ["wine-0.1"], incomplete: [shippedRuntimeID]
         )
 
-        #expect(made.map(\.copy) == [.unpatched, .damaged, .unsupported])
-        #expect(made[2].buildID == "25.0.0.1")
-        #expect(made[2].install == nil)
+        #expect(made.map(\.copy) == [.incomplete, .none, .unsupported])
+        #expect(made.map(\.unsupportedVersion) == [nil, "wine-0.2", nil])
     }
 
-    @Test("Two apps of the same build share one row, the preferred one")
+    @Test("Two runtimes of the same build share one row, the first one given")
     func sameBuildTwice() {
-        let first = install("CrossOver", Self.release)
-        let second = install("CrossOver", Self.release, root: "/Volumes/Spare")
+        let first = install("wine")
+        let second = install("wine", root: "/Volumes/Spare")
 
-        let made = rows([first, second], installed: [Self.release])
+        let made = rows([first, second], installed: [shippedRuntime])
 
         #expect(made.map(\.install?.id) == [first.id])
     }
 
-    @Test("A picked copy is found under the row for its path or its build")
-    func pickedCopyListing() {
-        let first = install("CrossOver", Self.release)
-        let second = install("CrossOver", Self.release, root: "/Volumes/Spare")
-        let preview = install("CrossOver Preview", Self.preview, root: "/Volumes/Spare")
-
-        let made = rows([first], installed: [Self.release, Self.preview])
-
-        #expect(CrossOverRow.listing(first, in: made)?.id == first.id)
-        #expect(CrossOverRow.listing(second, in: made)?.id == first.id)
-        #expect(CrossOverRow.listing(preview, in: made) == nil)
-
-        let swapped = install("CrossOver", Self.preview)
-        #expect(CrossOverRow.listing(swapped, in: made) == nil)
-
-        let old = CrossOverInstall(
-            bundle: URL(filePath: "/Applications/CrossOver 24.app"), releaseVersion: "24.0.5",
-            support: .unsupportedBuild("24.0.5")
-        )
-        #expect(CrossOverRow.listing(old, in: rows([old]))?.id == old.id)
-        #expect(CrossOverRow.listing(old, in: made) == nil)
-    }
-
-    @Test("An app Hadron doesn't support is listed with its version and nothing to set up")
-    func unsupportedApp() {
-        let old = CrossOverInstall(
-            bundle: URL(filePath: "/Applications/CrossOver 24.app"), releaseVersion: "24.0.5",
-            support: .unsupportedBuild("24.0.5")
-        )
+    @Test("A runtime Hadron doesn't support is listed with its version and nothing to set up")
+    func unsupportedRuntime() {
+        let old = install("old", .unsupportedBuild("wine-0.1"))
 
         let made = rows([old])
 
         #expect(made.count == 1)
-        #expect(made[0].unsupportedVersion == "24.0.5")
+        #expect(made[0].unsupportedVersion == "wine-0.1")
+        #expect(made[0].copy == .none)
         #expect(!made[0].canSetUp)
-    }
-}
-
-@Suite("Manually added CrossOver copies")
-struct ManualCrossOverTests {
-
-    private func defaults() -> UserDefaults {
-        let name = "np-manual-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
-        return defaults
+        #expect(made[0].title == "Hadron wine-0.1")
     }
 
-    @Test("The single copy 1.0 remembered carries over as the first entry")
-    func legacyChoiceCarriesOver() {
-        let defaults = defaults()
-        defaults.set("/Volumes/Spare/CrossOver.app", forKey: "manualCrossOverPath")
-
-        #expect(CrossOverSource.manualBundles(defaults).map { $0.path(percentEncoded: false) }
-            == ["/Volumes/Spare/CrossOver.app/"])
-
-        CrossOverSource.addManualBundle(URL(filePath: "/Volumes/Other/CrossOver.app"), defaults)
-
-        #expect(CrossOverSource.manualBundles(defaults).count == 2)
-        #expect(defaults.string(forKey: "manualCrossOverPath") == nil)
+    @Test("A manually added runtime says so on its row")
+    func manualRow() {
+        #expect(rows([install("wine", isManual: true)])[0].isManual)
+        #expect(!rows([install("wine")])[0].isManual)
+        #expect(!rows([], installed: [shippedRuntime])[0].isManual)
     }
 
-    @Test("Adding keeps earlier copies, skips repeats, and removing drops only the one named")
-    func addAndRemove() {
-        let defaults = defaults()
-        let spare = URL(filePath: "/Volumes/Spare/CrossOver.app", directoryHint: .isDirectory)
-        let other = URL(filePath: "/Volumes/Other/CrossOver Preview.app", directoryHint: .isDirectory)
+    @Test("A picked runtime is found under the row for its build, or its path when unsupported")
+    func pickedRuntimeListing() {
+        let first = install("wine")
+        let second = install("wine", root: "/Volumes/Spare")
 
-        CrossOverSource.addManualBundle(spare, defaults)
-        CrossOverSource.addManualBundle(other, defaults)
-        CrossOverSource.addManualBundle(spare, defaults)
-        #expect(CrossOverSource.manualBundles(defaults) == [spare, other])
+        let made = rows([first], installed: [shippedRuntime])
 
-        CrossOverSource.removeManualBundle(spare, defaults)
-        #expect(CrossOverSource.manualBundles(defaults) == [other])
-    }
+        #expect(RuntimeRow.listing(first, in: made)?.id == first.id)
+        #expect(RuntimeRow.listing(second, in: made)?.id == first.id)
 
-    @Test("A remembered copy in a folder the search covers is not treated as added by hand")
-    func searchedFolderIsNotManual() {
-        #expect(CrossOverSource.isSearched(URL(filePath: "/Applications/CrossOver.app/")))
-        #expect(CrossOverSource.isSearched(URL(filePath: "/Applications/CrossOver.app")))
-        #expect(!CrossOverSource.isSearched(URL(filePath: "/Volumes/Spare/CrossOver.app")))
-        #expect(!CrossOverSource.isSearched(URL(filePath: "/Applications/Games/CrossOver.app")))
+        // A copy without its runtime folder has no row a picked runtime can land on.
+        #expect(RuntimeRow.listing(first, in: rows([], installed: [shippedRuntime])) == nil)
+
+        let old = install("old", .unsupportedBuild("wine-0.1"))
+        #expect(RuntimeRow.listing(old, in: rows([old]))?.id == old.id)
+        #expect(RuntimeRow.listing(old, in: made) == nil)
+        let oldElsewhere = install("old", .unsupportedBuild("wine-0.1"), root: "/Volumes/Spare")
+        #expect(RuntimeRow.listing(oldElsewhere, in: rows([old])) == nil)
     }
 }

@@ -11,7 +11,7 @@ struct TemplateCleanupTests {
         var runners: URL { root.appending(path: "runners") }
         var library: SteamLibrary { SteamLibrary(root: root.appending(path: "library")) }
         var folder: URL { library.compatdata.appending(path: SupportPaths.prefixTemplateFolder) }
-        var template: URL { SupportPaths.prefixTemplates(forBuild: "26.3.0.39832", in: library)[0] }
+        var template: URL { SupportPaths.prefixTemplates(forBuild: shippedRuntimeID, in: library)[0] }
         var lock: URL { library.compatdata.appending(path: ".notproton-template.lock") }
 
         init() throws {
@@ -26,8 +26,7 @@ struct TemplateCleanupTests {
                 withIntermediateDirectories: true)
             try Data("old tool list\n".utf8).write(to: root.appending(path: "tools"))
             try RunnerInstaller.removeClone(
-                forBuild: build, runners: runners, bridge: root.appending(path: "bridge"),
-                toolList: root.appending(path: "tools"), compatTools: root.appending(path: "compat-tools"),
+                forBuild: build, runners: runners, toolList: root.appending(path: "tools"),
                 libraries: [library], running: { _ in false })
         }
     }
@@ -51,7 +50,8 @@ struct TemplateCleanupTests {
     func preservesUnknownChildren() throws {
         let layout = try Layout()
         defer { try? FileManager.default.removeItem(at: layout.root) }
-        let names = ["notes", "crossover--x86_64-unix", "crossover-bad_build-x86_64-unix", "crossover-26.3.0.39832-i386-unix"]
+        let names = ["notes", "-x86_64-unix", "bad_build-x86_64-unix", "\(shippedRuntimeID)-i386-unix",
+                     "wine 11-x86_64-unix", "\(shippedRuntimeID)-x86_64-unix.old"]
         for name in names {
             try Data("keep".utf8).write(to: layout.folder.appending(path: name))
         }
@@ -73,7 +73,7 @@ struct TemplateCleanupTests {
         try FileManager.default.createDirectory(at: cache.appending(path: "x86_64-unix"), withIntermediateDirectories: true)
         try Data("bridge".utf8).write(to: cache.appending(path: "x86_64-unix/lsteamclient.so"))
 
-        #expect(RunnerInstaller.removePrefixTemplates(keeping: ["26.3.0.39832"], libraries: [layout.library]).isEmpty)
+        #expect(RunnerInstaller.removePrefixTemplates(keeping: [shippedRuntimeID], libraries: [layout.library]).isEmpty)
         #expect(FileManager.default.fileExists(atPath: cache.appending(path: "x86_64-unix/lsteamclient.so").path))
         #expect(FileManager.default.fileExists(atPath: layout.template.path))
 
@@ -149,7 +149,7 @@ struct TemplateCleanupTests {
         let sentinel = outside.appending(path: "keep")
         try Data("keep".utf8).write(to: sentinel)
         try FileManager.default.createSymbolicLink(at: layout.template.appending(path: "Documents"), withDestinationURL: outside)
-        let linked = SupportPaths.prefixTemplates(forBuild: "26.3.0.39832", in: layout.library)[1]
+        let linked = SupportPaths.prefixTemplates(forBuild: shippedRuntimeID, in: layout.library)[1]
         try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: outside)
 
         let failures = RunnerInstaller.removeStalePrefixTemplates(runners: layout.runners, libraries: [layout.library])
@@ -245,16 +245,14 @@ struct TemplateCleanupTests {
     func refreshesTemplateSizes() async throws {
         let layout = try Layout()
         defer { try? FileManager.default.removeItem(at: layout.root) }
-        let build = "26.3.0.39832"
-        try FileManager.default.createDirectory(
-            at: SupportPaths.clonedRoot(forBuild: build, runners: layout.runners).appending(path: "lib/wine"),
-            withIntermediateDirectories: true)
+        let build = shippedRuntimeID
+        try makeInstalledRuntime(in: layout.runners, id: build)
         let other = SteamLibrary(root: layout.root.appending(path: "second-library"))
         let otherTemplate = SupportPaths.prefixTemplates(forBuild: build, in: other)[1]
         try FileManager.default.createDirectory(at: otherTemplate, withIntermediateDirectories: true)
-        let file = layout.template.appending(path: "ntdll.dll")
+        let file = layout.template.appending(path: "system.reg")
         try Data(repeating: 7, count: 4 << 20).write(to: file)
-        try #require(clonefile(file.path, otherTemplate.appending(path: "ntdll.dll").path, 0) == 0)
+        try #require(clonefile(file.path, otherTemplate.appending(path: "system.reg").path, 0) == 0)
         let status = SystemStatus()
 
         await status.refreshRunnerStorage(runners: layout.runners, libraries: [layout.library, other])
@@ -271,14 +269,12 @@ struct TemplateCleanupTests {
     }
 
     @MainActor
-    @Test("A build with a FEX and a Rosetta tool measures each tool's template on its own")
+    @Test("A build's FEX and Rosetta templates are each measured on their own")
     func measuresTemplatesPerTool() async throws {
         let layout = try Layout()
         defer { try? FileManager.default.removeItem(at: layout.root) }
-        let build = "27.0.0.40921-fex"
-        try FileManager.default.createDirectory(
-            at: SupportPaths.clonedRoot(forBuild: build, runners: layout.runners).appending(path: "lib/wine"),
-            withIntermediateDirectories: true)
+        let build = shippedRuntimeID
+        try makeInstalledRuntime(in: layout.runners, id: build)
         for (flavor, size) in [(CompatTool.Flavor.fex, 4 << 20), (.rosetta, 1 << 20)] {
             let template = SupportPaths.prefixTemplate(forBuild: build, flavor: flavor, in: layout.library)
             try FileManager.default.createDirectory(at: template, withIntermediateDirectories: true)
@@ -312,7 +308,7 @@ struct TemplateCleanupTests {
         let layout = try Layout()
         defer { try? FileManager.default.removeItem(at: layout.root) }
         let other = SteamLibrary(root: layout.root.appending(path: "other"))
-        let template = SupportPaths.prefixTemplates(forBuild: "26.3.0.39832", in: other)[0]
+        let template = SupportPaths.prefixTemplates(forBuild: shippedRuntimeID, in: other)[0]
         try FileManager.default.createDirectory(at: template, withIntermediateDirectories: true)
         try #require(chflags(layout.template.path, UInt32(UF_IMMUTABLE)) == 0)
         defer { chflags(layout.template.path, 0) }

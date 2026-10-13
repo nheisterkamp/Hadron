@@ -32,7 +32,7 @@ struct PayloadState: Sendable {
 enum PayloadInspector {
 
     static func inspect(
-        bridge: URL = SupportPaths.bridge, builds: [RunnerBuild] = RunnerStore.installedBuilds()
+        bridge: URL = SupportPaths.bridge
     ) -> PayloadState {
         let fm = FileManager.default
 
@@ -42,7 +42,7 @@ enum PayloadInspector {
 
         do {
             let manifest = try PayloadManifest.bundled()
-            let entries = manifest.entries.flatMap { expand($0, for: builds) }
+            let entries = manifest.entries
             expected = entries.count
             missing = entries.filter {
                 !fm.fileExists(atPath: bridge.appending(path: $0.path).path(percentEncoded: false))
@@ -73,17 +73,6 @@ enum PayloadInspector {
             legacyCompatExpected: legacyNames.count,
             manifestProblem: problem
         )
-    }
-
-    private static func expand(_ entry: PayloadEntry, for builds: [RunnerBuild]) -> [PayloadEntry] {
-        guard entry.origin == .patched,
-              let arch = WineArch.allCases.first(where: {
-                  entry.path == "wine/\($0.rawValue)/ntdll.dll"
-              })
-        else { return [entry] }
-        return builds.filter { $0.patchedNtdll[arch] != nil }.map {
-            PayloadEntry(origin: .patched, path: "wine/\($0.id)/\(arch.rawValue)/ntdll.dll")
-        }
     }
 
     static func newestSignatureDatabase(in directory: URL = SupportPaths.signatures) -> String? {

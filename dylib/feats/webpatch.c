@@ -17,13 +17,10 @@
 
 // Stands for the name set by np_webpatch_set_fallback_tool.
 #define NP_FALLBACK_TOOL "\021"
-// Stands for the JS array set by np_webpatch_set_fex_tools.
-#define NP_FEX_TOOLS "\022"
 
 #define NP_TOOL_NAME_MAX 128
 
 static _Thread_local char g_fallback_tool[NP_TOOL_NAME_MAX];
-static _Thread_local char g_fex_tools[NP_WEBPATCH_FEX_TOOLS_MAX * (NP_TOOL_NAME_MAX + 3) + 3] = "[]";
 
 typedef struct {
     const char *find;
@@ -57,25 +54,8 @@ void np_webpatch_set_fallback_tool(const char *name) {
         memcpy(g_fallback_tool, name, strlen(name) + 1);
 }
 
-void np_webpatch_set_fex_tools(const char *const *names, size_t count) {
-    size_t n = 0;
-    g_fex_tools[n++] = '[';
-    for (size_t i = 0; i < count && i < NP_WEBPATCH_FEX_TOOLS_MAX; i++) {
-        if (!names[i] || !*names[i] || !is_tool_name(names[i])) continue;
-        size_t len = strlen(names[i]);
-        if (n > 1) g_fex_tools[n++] = ',';
-        g_fex_tools[n++] = '"';
-        memcpy(g_fex_tools + n, names[i], len);
-        n += len;
-        g_fex_tools[n++] = '"';
-    }
-    g_fex_tools[n++] = ']';
-    g_fex_tools[n] = '\0';
-}
-
 static const char *marker_text(char c) {
     if (c == NP_FALLBACK_TOOL[0]) return g_fallback_tool;
-    if (c == NP_FEX_TOOLS[0]) return g_fex_tools;
     return NULL;
 }
 
@@ -164,7 +144,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 }
 
 // Finds the launch options set before %command%.
-#define NP_CX_LAUNCH_PARSE \
+#define NP_LAUNCH_PARSE \
     "E=(()=>{let i=0,c=[];const cs=[c]," \
     "qs=x=>{while(i<o.length&&o[i]!==x)i+=x!==\"'\"&&o[i]==='\\\\'?2:1;i++}," \
     "nest=(a,b)=>{for(let d=1;i<o.length&&d;){const x=o[i++];" \
@@ -192,7 +172,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const n=G.findIndex(w=>m(w)||!/^[A-Za-z_]\\w*=/.test(o.slice(w.start,w.end)));" \
     "return{p:G[0].start,e:G.slice(0,n<0?G.length:n)}})(),"
 
-// CrossOver options panel. Not in great shape, but it'll do
+// Hadron options panel. Not in great shape, but it'll do
 #define NP_WEB_IS_ZH \
     "(()=>{const l=(globalThis.document?.documentElement?.lang||" \
     "globalThis.navigator?.language||\"\").toLowerCase().replace(/_/g,\"-\");" \
@@ -201,30 +181,26 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_WEB_TEXT(EN, ZH) "(" NP_WEB_IS_ZH "?\"" ZH "\":\"" EN "\")"
 
 #define NP_COMPAT_HINT NP_WEB_TEXT( \
-    "Enable CrossOver under Properties > Compatibility to install and run the Windows version.", \
-    "请在“属性 > 兼容性”中启用 CrossOver，以安装并运行 Windows 版本。")
+    "Enable Hadron under Properties > Compatibility to install and run the Windows version.", \
+    "请在“属性 > 兼容性”中启用 Hadron，以安装并运行 Windows 版本。")
 
 #define NP_IMAGE_FILES_LABEL NP_WEB_TEXT( \
     "Image Files (*.tga,*.png,*.exe)", "图像文件 (*.tga,*.png,*.exe)")
 
-#define NP_CX_OPTIONS_CSS \
-    "\".MSCXPanel{margin-top:10px}" \
-    ".MSCXPanel .MSCXRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
+#define NP_OPTIONS_CSS \
+    "\".NPHadronPanel{margin-top:10px}" \
+    ".NPHadronPanel .NPHadronRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
     "color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
-    ".MSCXPanel .MSCXRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
-    ".MSCXPanel .MSCXNote{padding:6px 2px 0;color:#ffc82c;font-size:13px}" \
-    ".MSCXNoBottomGap{margin-bottom:0}\""
+    ".NPHadronPanel .NPHadronRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
+    ".NPNoBottomGap{margin-bottom:0}\""
 
-// The FEX build runs arm64 Wine, so D3DMetal (x86_64 only) and its DLSS flag cannot
-// load, and Rosetta, which reads ROSETTA_ADVERTISE_AVX, never runs. A game already set
-// to D3DMetal keeps the entry and a note, so the page does not claim a backend the game
-// is not getting.
-#define NP_CX_OPTIONS_BODY(ARG, RT, BARREL) \
+// NOTPROTON_GRAPHICS picks the D3D10/11 path: unset or dxmt is DXMT on Metal, wined3d
+// is Wine's own Direct3D. The DXMT rows go with DXMT, so leaving it clears them.
+#define NP_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
-    "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
     "npZh=" NP_WEB_IS_ZH ",npL=(en,zh)=>npZh?zh:en," \
-    NP_CX_LAUNCH_PARSE \
+    NP_LAUNCH_PARSE \
     "g=k=>{const p=E.e.filter(w=>o.startsWith(k+\"=\",w.start)).pop();" \
     "return p?(p.value===null?o.slice(p.start+k.length+1,p.end):p.value.slice(k.length+1)):\"\"}," \
     "qv=v=>/^[\\w.,:=\\/+@%-]*$/.test(v)?v:\"'\"+v.replace(/'/g,\"'\\\\''\")+\"'\"," \
@@ -234,13 +210,11 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "E.e.forEach(w=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",w.start))){" \
     "r+=o.slice(at,w.start);at=w.end;while(o[at]===\" \"||o[at]===\"\\t\")at++}});r+=o.slice(at)}" \
     "SteamClient.Apps.SetAppLaunchOptions(t.unAppID,r.trim()===\"%command%\"?\"\":r)}," \
-    "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"MSCXRow\",label:l," \
+    "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"NPHadronRow\",label:l," \
     "checked:g(ks[0])===on," \
     "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
-    "b=g(\"CX_GRAPHICS_BACKEND\")," \
-    "dk=fex&&\"d3dmetal\"===b," \
-    "dm=!fex&&(\"\"===b||\"d3dmetal\"===b)," \
-    "dx=\"\"===b||\"dxmt\"===b," \
+    "b=g(\"NOTPROTON_GRAPHICS\")||\"dxmt\"," \
+    "dx=\"dxmt\"===b," \
     "sw=\"1\"===g(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
     "F=\"d3d11.metalSpatialUpscaleFactor=\"," \
     "fe=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
@@ -253,31 +227,20 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"1.72\",label:\"1.72x\"}," \
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
-    "B=[{data:\"\",label:npL(\"Automatic\",\"自动\")}," \
-    "{data:\"d3dmetal\",label:\"D3DMetal\"}," \
-    "{data:\"dxmt\",label:\"DXMT\"}," \
-    "{data:\"dxvk\",label:\"DXVK\"}," \
-    "{data:\"wined3d\",label:\"WineD3D\"}].filter(x=>!fex||dk||x.data!==\"d3dmetal\");" \
+    "B=[{data:\"dxmt\",label:\"DXMT\"}," \
+    "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own Direct3D)\",\"WineD3D（Wine 自带的 Direct3D）\")}];" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
-    "return(0," RT ".jsx)(\"div\",{className:\"MSCXPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
-    "(0," RT ".jsx)(\"style\",{children:" NP_CX_OPTIONS_CSS "})," \
+    "return(0," RT ".jsx)(\"div\",{className:\"NPHadronPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
+    "(0," RT ".jsx)(\"style\",{children:" NP_OPTIONS_CSS "})," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
-    "onChange:v=>s([[\"CX_GRAPHICS_BACKEND\",v.data]]" \
-    ".concat(\"\"===v.data||\"d3dmetal\"===v.data?[]:[[\"D3DM_ENABLE_METALFX\",\"\"]])" \
-    ".concat(\"\"===v.data||\"dxmt\"===v.data?[]:" \
-    "[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]])" \
-    ".concat(\"dxmt\"===v.data?[]:[[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
-    "dk&&(0," RT ".jsx)(\"div\",{className:\"MSCXNote\"," \
-    "children:npL(\"D3DMetal needs the Rosetta build of CrossOver. On the FEX build, " \
-    "this game runs on another backend.\",\"D3DMetal 需要 Rosetta 版 CrossOver。" \
-    "在 FEX 版中，此游戏会使用其他图形后端。\")},\"fexnote\")," \
+    "onChange:v=>s([[\"NOTPROTON_GRAPHICS\",\"dxmt\"===v.data?\"\":v.data]]" \
+    ".concat(\"dxmt\"===v.data?[]:[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"]," \
+    "[\"DXMT_CONFIG\",fx(\"\")],[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
     "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\"),\"1\")," \
-    "dm&&T([\"D3DM_ENABLE_METALFX\"],\"DLSS\",\"1\")," \
-    "\"dxmt\"===b&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
-    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
-    "T([\"WINEMSYNC\"],\"MSync\",\"1\",\"0\")," \
+    "dx&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
+    "T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
     "T([\"NOTPROTON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")" \
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
@@ -292,18 +255,18 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"允许游戏直接读取控制器\"),\"1\",\"\")},\"ctl\")" \
     "]})})}"
 
-#define NP_CX_OPTIONS_COMPONENT \
-    "MSCXOpts=" NP_CX_OPTIONS_BODY("e", "i", "c") ","
+#define NP_OPTIONS_COMPONENT \
+    "NPHadronOpts=" NP_OPTIONS_BODY("e", "i", "c") ","
 
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
-#define NP_CX_OPTIONS_STATEMENT \
-    "var MSCXOpts=" NP_CX_OPTIONS_BODY("np", NP_C3, NP_C4) ";"
+#define NP_OPTIONS_STATEMENT \
+    "var NPHadronOpts=" NP_OPTIONS_BODY("np", NP_C3, NP_C4) ";"
 
-// 1.0.x saved CrossOver settings without %command%, this migrates them.
+// 1.0.x saved launch settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \
     "o=>{const T=/(?:[^\\s\"'\\\\]|\\\\[^]|\"(?:[^\"\\\\]|\\\\[^])*\"|'[^']*')+/g," \
     "w=o.match(T)||[]," \
-    "k=x=>/^(CX_GRAPHICS|D3DM_|DXMT_|DXVK_|MTL_|NOTPROTON_|ROSETTA_|WINE)\\w*=/.test(x)," \
+    "k=x=>/^(DXMT_|DXVK_|MTL_|NOTPROTON_|ROSETTA_|WINE)\\w*=/.test(x)," \
     "e=w.filter(k);" \
     "if(/%command%/i.test(o)||o.replace(T,\"\").trim()||!e.length)return null;" \
     "return e.map(x=>{const i=x.indexOf(\"=\"),v=x.slice(i+1);" \
@@ -345,17 +308,17 @@ static const np_gate_t g_gates_forcetool[] = {
       "(t.unAppID,e.data)})]})",
       "return(0,i.jsxs)(i.Fragment,{children:[0!=a.length&&(0,i.jsx)(_r,{label:(0,A.we)"
       "(\"#AppProperties_CompatilibityForceTool\"),checked:g,onChange:C,disabled:!r||0===a.length}),"
-      "g&&a.length>0&&(0,i.jsx)(c.m,{strClassName:K().TopGap+\" MSCXNoBottomGap\",rgOptions:d,"
+      "g&&a.length>0&&(0,i.jsx)(c.m,{strClassName:K().TopGap+\" NPNoBottomGap\",rgOptions:d,"
       "selectedOption:t.strCompatToolName,onChange:e=>SteamClient.Apps.SpecifyCompatTool"
       "(t.unAppID,e.data)})]})", 1 },
     // Compatibility page container
     { "Rt=(0,a.PA)(e=>(0,i.jsxs)(c.nB,{children:[(0,i.jsx)(\"div\",{className:K().HiddenIfNotLast,"
       "children:(0,A.we)(\"#AppProperties_CompatibilityNoOptions\")}),(0,i.jsx)(It,{...e}),"
       "(0,i.jsx)(xt,{...e})]}));",
-      NP_CX_OPTIONS_COMPONENT
+      NP_OPTIONS_COMPONENT
       "Rt=(0,a.PA)(e=>(0,i.jsxs)(c.nB,{children:[(0,i.jsx)(\"div\",{className:K().HiddenIfNotLast,"
       "children:(0,A.we)(\"#AppProperties_CompatibilityNoOptions\")}),(0,i.jsx)(It,{...e}),"
-      "(0,i.jsx)(xt,{...e}),(0,i.jsx)(MSCXOpts,{...e})]}));", 1 },
+      "(0,i.jsx)(xt,{...e}),(0,i.jsx)(NPHadronOpts,{...e})]}));", 1 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
       "get is_invalid_os_type(){return false}", 1 },
     // Reminder banner for 32 bit Mac games
@@ -380,13 +343,13 @@ static const np_gate_t g_gates_selecttool[] = {
       "(\"#Settings_SteamPlay_SteamPlay\"),children:[(0," NP_C3 ".jsx)(" NP_C6 ",{details:" NP_C2 ".details}),"
       "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_ShowAll\"),feature:" NP_C8 ".OK})]})}",
-      NP_CX_OPTIONS_STATEMENT
+      NP_OPTIONS_STATEMENT
       "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".jsxs)(" NP_C3 ".Fragment,{children:["
       "(0," NP_C3 ".jsxs)(" NP_C4 ".XY,{label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_SteamPlay\"),children:[(0," NP_C3 ".jsx)(" NP_C6 ",{details:" NP_C2 ".details}),"
       "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_ShowAll\"),feature:" NP_C8 ".OK})]}),"
-      "(0," NP_C3 ".jsx)(MSCXOpts,{details:" NP_C2 ".details})]})}", 1 },
+      "(0," NP_C3 ".jsx)(NPHadronOpts,{details:" NP_C2 ".details})]})}", 1 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
       "get is_invalid_os_type(){return false}", 1 },
     // Reminder banner for 32 bit Mac games

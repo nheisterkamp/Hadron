@@ -3,7 +3,7 @@
 import Foundation
 
 enum PayloadOrigin: String, Sendable, CaseIterable {
-    case built, patched, valve
+    case built, valve
 
 
     var isFetchable: Bool { self == .valve }

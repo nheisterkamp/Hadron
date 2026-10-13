@@ -6,167 +6,73 @@ import Testing
 @Suite("Runner allow list")
 struct SupportedRunnerTests {
 
-    // The arches a build carries need both hashes: an input with no output leaves the patch
-    // unverified, and an output with no input patches a file nothing had checked.
-    @Test("Every row's pin hashes are complete for the arches it claims")
-    func rowsAreComplete() {
-        #expect(!SupportedRunners.all.isEmpty)
-
-        let rebuilt = SupportedRunners.all.flatMap { build in
-            build.rebuilds.compactMap { build.matching(loaderSHA256: $0.loaderSHA256) }
-        }
-        for build in SupportedRunners.all + rebuilt {
-            // A runtime is patched in source and identified by its marker file.
-            if build.source == .runtime {
-                #expect(build.loaderSHA256.isEmpty && build.cleanNtdll.isEmpty && build.patchedNtdll.isEmpty)
-                continue
-            }
-            expectSHA256(build.loaderSHA256, "loader for \(build.id)")
-            #expect(!build.cleanNtdll.isEmpty, "\(build.id) patches nothing")
-            #expect(Set(build.cleanNtdll.keys) == Set(build.patchedNtdll.keys), "\(build.id) is lopsided")
-
-            for (arch, clean) in build.cleanNtdll {
-                let patched = build.patchedNtdll[arch]
-                expectSHA256(clean, "clean \(arch.rawValue)")
-                expectSHA256(patched ?? "", "patched \(arch.rawValue)")
-
-                // A patch that produced its own input would mean the patcher did
-                // nothing, and the launch path would silently run stock ntdll.
-                #expect(clean != patched)
-            }
-        }
-    }
-
     @Test("Identities are unique so lookup is unambiguous")
     func identitiesAreUnique() {
-        // Versions are deliberately not unique here: CodeWeavers ships flavors sharing one,
-        // which is why neither the lookup key nor the clone directory is the version.
+        #expect(!SupportedRunners.all.isEmpty)
         let ids = SupportedRunners.all.map(\.id)
         #expect(Set(ids).count == ids.count)
-
-        let loaders = SupportedRunners.all.flatMap { [$0.loaderSHA256] + $0.rebuilds.map(\.loaderSHA256) }
-        #expect(Set(loaders).count == loaders.count)
+        let tools = SupportedRunners.all.flatMap(\.tools).map(\.name)
+        #expect(Set(tools).count == tools.count)
     }
 
-    @Test("A rebuild is found as its build, carrying its own hashes")
-    func rebuildResolvesToItsBuild() throws {
-        let build = try #require(SupportedRunners.build(id: "26.3.0.39832"))
-        let rebuild = try #require(build.rebuilds.first)
-
-        let found = try #require(SupportedRunners.build(loaderSHA256: rebuild.loaderSHA256))
-        #expect(found.id == build.id)
-        #expect(found.tools == build.tools)
-        #expect(found.loaderSHA256 == rebuild.loaderSHA256)
-        #expect(found.cleanNtdll == rebuild.cleanNtdll)
-        #expect(found.patchedNtdll == rebuild.patchedNtdll)
-        #expect(NtdllPatcher.patches(for: found).map(\.arch) == NtdllPatcher.patches(for: build).map(\.arch))
-
-        #expect(SupportedRunners.build(loaderSHA256: build.loaderSHA256) == build)
-        #expect(build.matching(loaderSHA256: String(rebuild.loaderSHA256.dropLast())) == nil)
-    }
-
-    @Test("The first supported build keeps a bare version as its id")
-    func firstBuildKeepsBareVersionID() {
-        // Its clone is already on disk as crossover-<version>, and a machine whose CrossOver
-        // has since been replaced by another flavor could not produce that clone again.
-        let build = SupportedRunners.all[0]
-        #expect(build.flavor == nil)
-        #expect(build.id == build.bundleVersion)
-    }
-
-    // Picking the FEX CrossOver used to read "Build 27.0.0.40921", the same as the Rosetta one.
-    // Which had been picked only became visible once the clone directory carried the flavor.
-    @Test("A build is named by its flavor as well as its version")
-    func buildsAreNamedByFlavor() {
-        let rosetta = try! #require(SupportedRunners.build(id: "27.0.0.40921"))
-        let fex = try! #require(SupportedRunners.build(id: "27.0.0.40921-fex"))
-
-        #expect(rosetta.bundleVersion == fex.bundleVersion)
-        #expect(rosetta.releaseVersion == fex.releaseVersion)
-        #expect(rosetta.displayVersion == "20260821 Rosetta")
-        #expect(fex.displayVersion == "20260821 FEX")
-        #expect(rosetta.displayVersion != fex.displayVersion)
-    }
-
-    // The installed row has only the clone directory name, which is the id.
+    // The installed row has only the copy's directory name, which is the id.
     @Test("An installed build is named the same way the picked one is")
     func installedBuildsReadBackTheSame() {
         for build in SupportedRunners.all {
             #expect(SupportedRunners.displayVersion(forID: build.id) == build.displayVersion)
-            #expect(!SupportedRunners.displayVersion(forID: build.id).contains("-fex"))
+            #expect(build.displayVersion == build.releaseVersion)
         }
 
         // A tree off the allow list still has to say something, and its directory name is
         // all there is to say.
-        #expect(SupportedRunners.displayVersion(forID: "26.0.1.1234") == "26.0.1.1234")
+        #expect(SupportedRunners.displayVersion(forID: "wine-0.1") == "wine-0.1")
     }
 
-    @Test("Lookup matches on an exact loader hash only")
+    @Test("Lookup matches on an exact id only")
     func lookupIsExact() {
         let build = SupportedRunners.all[0]
-        #expect(SupportedRunners.build(loaderSHA256: build.loaderSHA256) != nil)
-        #expect(SupportedRunners.build(loaderSHA256: String(build.loaderSHA256.dropLast())) == nil)
-        #expect(SupportedRunners.build(loaderSHA256: build.loaderSHA256 + " ") == nil)
-        #expect(SupportedRunners.build(id: build.id) != nil)
+        #expect(SupportedRunners.build(id: build.id) == build)
         #expect(SupportedRunners.build(id: build.id + " ") == nil)
+        #expect(SupportedRunners.build(id: String(build.id.dropLast())) == nil)
     }
 
-    private func expectSHA256(_ value: String, _ label: String) {
-        #expect(value.count == 64, "\(label) is not a sha256")
-        #expect(value.allSatisfy { $0.isHexDigit && !$0.isUppercase }, "\(label) is not lowercase hex")
+    @Test("The supported list names every release")
+    func versionList() {
+        #expect(SupportedRunners.versionList
+            == SupportedRunners.all.map(\.releaseVersion).joined(separator: ", "))
+        #expect(SupportedRunners.versionList.contains(shippedRuntime.releaseVersion))
     }
 }
 
 @Suite("Steam tools")
 struct CompatToolOrderTests {
 
-    private func build(_ id: String) throws -> RunnerBuild {
-        try #require(SupportedRunners.build(id: id))
-    }
-
-    @Test("Tools come out in preference order whatever order the builds are in")
+    @Test("Tools come out in allow-list order, whatever order the builds are in")
     func order() throws {
-        let tools = SupportedRunners.tools(for: [
-            try build("26.3.0.39832"), try build("27.0.0.40921-fex"),
+        let tools = SupportedRunners.tools(for: SupportedRunners.all.reversed())
+        #expect(tools.map(\.name) == SupportedRunners.all.flatMap(\.tools).map(\.name))
+        #expect(tools.first?.name == "notproton-wine")
+        #expect(tools.first?.build == shippedRuntimeID)
+    }
+
+    @Test("A build off the allow list serves no tools")
+    func unknownBuild() {
+        let unknown = RunnerBuild(id: "wine-0.1", releaseVersion: "Wine 0.1", tools: [
+            CompatTool(name: "notproton-old", flavor: .rosetta, display: "Old"),
         ])
-        #expect(tools.map(\.name) == ["notproton-fex", "notproton-fex-rosetta", "notproton-26.3"])
-        #expect(tools.map(\.build) == ["27.0.0.40921-fex", "27.0.0.40921-fex", "26.3.0.39832"])
+        #expect(SupportedRunners.tools(for: [unknown]).isEmpty)
     }
 
-    @Test("Without FEX support the ARM64 build offers only its Rosetta tool, unless FEX was already listed")
-    func noFEX() throws {
-        let builds = [try build("27.0.0.41069-fex"), try build("26.3.0.39832")]
-        let fresh = SupportedRunners.tools(for: builds, fexAvailable: false)
-        #expect(fresh.map(\.name) == ["notproton-fex-rosetta-41069", "notproton-26.3"])
-        let kept = SupportedRunners.tools(for: builds, fexAvailable: false, keeping: ["notproton-fex-41069"])
-        #expect(kept.map(\.name) == ["notproton-fex-41069", "notproton-fex-rosetta-41069", "notproton-26.3"])
-    }
-
-    @Test("Each Preview keeps its own tools when both are set up")
-    func bothPreviews() throws {
-        let tools = SupportedRunners.tools(for: [
-            try build("27.0.0.40921-fex"), try build("27.0.0.40921"),
-        ])
-        #expect(tools.map(\.name) == ["notproton-fex", "notproton-fex-rosetta", "notproton-preview"])
-        #expect(tools.map(\.build) == ["27.0.0.40921-fex", "27.0.0.40921-fex", "27.0.0.40921"])
-        #expect(Set(tools.map(\.display)).count == tools.count)
-    }
-
-    @Test("The Rosetta-only Preview can hold the legacy name")
-    func rosettaPreviewAlone() throws {
-        let tools = SupportedRunners.tools(for: [try build("27.0.0.40921")], legacy: .build("27.0.0.40921"))
-        #expect(tools.map(\.name) == ["notproton"])
-        #expect(tools.first?.tool.flavor == .rosetta)
-    }
-
-    @Test("A named holder keeps the legacy name, and nobody leaves every Preview on its own name")
-    func explicitHolder() throws {
-        let builds = [try build("27.0.0.40921-fex"), try build("27.0.0.40921")]
-        let held = SupportedRunners.tools(for: builds, legacy: .build("27.0.0.40921"))
-        #expect(held.map(\.name) == ["notproton", "notproton-fex", "notproton-fex-rosetta"])
-        #expect(held.first?.build == "27.0.0.40921")
-        let none = SupportedRunners.tools(for: builds, legacy: .nobody)
-        #expect(none.map(\.name) == ["notproton-fex", "notproton-fex-rosetta", "notproton-preview"])
+    @Test("A tool's flavor decides its prefix arch and Wine unix folder")
+    func flavors() {
+        let rosetta = CompatTool(name: "notproton-a", flavor: .rosetta, display: "A")
+        let fex = CompatTool(name: "notproton-b", flavor: .fex, display: "B")
+        #expect(rosetta.prefixArch == .x86_64)
+        #expect(fex.prefixArch == .arm64)
+        #expect(CompatTool.Flavor.rosetta.unixDir == "x86_64-unix")
+        #expect(CompatTool.Flavor.fex.unixDir == "aarch64-unix")
+        #expect(CompatTool.Flavor.rosetta.name == "Rosetta")
+        #expect(CompatTool.Flavor.fex.name == "FEX")
     }
 
     @Test("Every tool name is one the dylib accepts")
@@ -181,9 +87,9 @@ struct CompatToolOrderTests {
 
     @Test("The list file has one tab-separated line per tool")
     func contents() throws {
-        let tools = SupportedRunners.tools(for: [try build("26.3.0.39832")])
+        let tools = SupportedRunners.tools(for: [shippedRuntime])
         #expect(CompatToolList.contents(tools)
-            == "notproton-26.3\t26.3.0.39832\trosetta\tCrossOver 26.3\n")
+            == "notproton-wine\t\(shippedRuntimeID)\trosetta\tHadron Wine 11.15\n")
     }
 }
 
@@ -236,5 +142,20 @@ struct SupportPathTests {
             == "/Applications/Steam.app/Contents/MacOS/notproton.dylib")
         #expect(SupportPaths.Steam.infoPlist.path(percentEncoded: false)
             == "/Applications/Steam.app/Contents/Info.plist")
+        #expect(SupportPaths.runnerRoot(forBuild: shippedRuntimeID).path(percentEncoded: false)
+            .hasSuffix("/notproton/runners/\(shippedRuntimeID)"))
+    }
+
+    @Test("The run script finds an installed runtime where setup copies it")
+    func runScriptAgreesOnRunnerRoot() throws {
+        let repo = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let script = try String(contentsOf: repo.appending(path: "dylib/feats/compat_run.sh"), encoding: .utf8)
+        #expect(script.contains("np_root=\"$np_support/runners/$np_build\""))
+        #expect(script.contains("\"$np_support\"/runners/*/share/wine/wine.inf"))
+        let support = URL(filePath: "/S")
+        #expect(SupportPaths.runnerRoot(forBuild: "$np_build", runners: support.appending(path: "runners"))
+            .path(percentEncoded: false) == "/S/runners/$np_build")
     }
 }

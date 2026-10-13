@@ -42,9 +42,9 @@ const app = (id, o, over) => Object.assign(
 
   const rule = [
     ['MTL_HUD_ENABLED=1 -dx11', 'MTL_HUD_ENABLED=1 %command% -dx11'],
-    ['-dx11 WINEMSYNC=1', 'WINEMSYNC=1 %command% -dx11'],
-    ['CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2',
-     'CX_GRAPHICS_BACKEND=dxmt DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2 %command%'],
+    ['-dx11 WINEDEBUG=-all', 'WINEDEBUG=-all %command% -dx11'],
+    ['NOTPROTON_GRAPHICS=wined3d DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2',
+     'NOTPROTON_GRAPHICS=wined3d DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=2 %command%'],
     ['WINEDLLOVERRIDES=d3d11=n;dxgi=n -novid', "WINEDLLOVERRIDES='d3d11=n;dxgi=n' %command% -novid"],
     ['WINEDEBUG="a b" -x "two words"', 'WINEDEBUG="a b" %command% -x "two words"'],
     ['  MTL_HUD_ENABLED=1   -a  ', 'MTL_HUD_ENABLED=1 %command% -a'],
@@ -71,7 +71,7 @@ const app = (id, o, over) => Object.assign(
   await s.go();
   t.ok(s.written.length === 0, 'a second start rewrites nothing');
 
-  const later = steam([app(100, 'WINEMSYNC=1 -x')], { storage: s.store });
+  const later = steam([app(100, 'WINEDEBUG=-all -x')], { storage: s.store });
   await later.go();
   t.ok(later.written.length === 0, 'a finished account is not checked again');
   const other = steam([app(100, 'MTL_HUD_ENABLED=1 -x')], { storage: s.store, account: 2 });
@@ -115,7 +115,7 @@ const app = (id, o, over) => Object.assign(
   await hidden.go();
   t.ok(hidden.written.some(x => x.appid === 1), 'covers uninstalled demos that the library hides');
 
-  const many = steam(Array.from({ length: 45 }, (_, i) => app(i + 1, 'WINEMSYNC=1')));
+  const many = steam(Array.from({ length: 45 }, (_, i) => app(i + 1, 'WINEDEBUG=-all')));
   await many.go();
   t.ok(many.written.filter(x => x.appid).length === 45 && many.store.size === 1,
        'checks every app when there are more than one batch');

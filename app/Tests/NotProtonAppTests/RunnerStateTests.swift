@@ -16,79 +16,94 @@ struct RunnerStateTests {
         }
 
         func makeClone(build: String, withWine: Bool = true) throws {
-            let root = runners.appending(path: "crossover-\(build)/CrossOver")
-            let leaf = withWine ? root.appending(path: "lib/wine") : root
-            try FileManager.default.createDirectory(at: leaf, withIntermediateDirectories: true)
+            if withWine {
+                try makeInstalledRuntime(in: runners, id: build)
+            } else {
+                try FileManager.default.createDirectory(
+                    at: SupportPaths.runnerRoot(forBuild: build, runners: runners),
+                    withIntermediateDirectories: true)
+            }
         }
 
         deinit { try? FileManager.default.removeItem(at: runners) }
     }
 
-    @Test("No clone means nothing is set up")
+    @Test("No copy means nothing is set up")
     func reportsNone() throws {
         let fixture = try Fixture()
         #expect(RunnerStore.state(runners: fixture.runners) == .none)
     }
 
-    @Test("Every patched clone is reported ready")
+    @Test("A complete copy is reported ready")
     func reportsReadyClones() throws {
         let fixture = try Fixture()
-        let ids = SupportedRunners.all.prefix(2).map(\.id)
-        for id in ids { try fixture.makeClone(build: id) }
+        try fixture.makeClone(build: shippedRuntimeID)
 
-        #expect(RunnerStore.state(runners: fixture.runners, verify: { _, _ in [] })
-            == .ready(builds: ids.sorted()))
+        #expect(RunnerStore.state(runners: fixture.runners) == .ready(builds: [shippedRuntimeID]))
     }
 
-    // The launch path only reads the runner, so a clone the app never finished patching
-    // has to be caught here rather than by a game failing its ownership check.
-    @Test("A clone missing a file the app installs is reported as unpatched")
-    func reportsUnpatchedClone() throws {
+    // The launch path only reads the runner, so a copy missing lsteamclient has to be caught
+    // here rather than by a game failing its ownership check.
+    @Test("A copy missing a built-in is reported as incomplete")
+    func reportsIncompleteClone() throws {
         let fixture = try Fixture()
-        let version = SupportedRunners.all[0].id
-        try fixture.makeClone(build: version)
+        try fixture.makeClone(build: shippedRuntimeID)
+        try FileManager.default.removeItem(
+            at: SupportPaths.runnerRoot(forBuild: shippedRuntimeID, runners: fixture.runners)
+                .appending(path: "lib/wine/x86_64-unix/lsteamclient.so"))
 
-        #expect(RunnerStore.state(runners: fixture.runners, verify: { _, _ in ["ntdll is stock"] })
-            == .unpatched(builds: [version], problems: ["\(version): ntdll is stock"]))
+        #expect(RunnerStore.state(runners: fixture.runners) == .incomplete(
+            builds: [shippedRuntimeID],
+            problems: ["\(shippedRuntimeID): x86_64-unix/lsteamclient.so is missing"]
+        ))
     }
 
-    @Test("Every unpatched clone is reported, not just the first")
-    func reportsEveryUnpatchedClone() throws {
+    @Test("Every problem a check finds is reported, prefixed with its build")
+    func reportsEveryProblem() throws {
         let fixture = try Fixture()
-        let ids = SupportedRunners.all.prefix(3).map(\.id).sorted()
-        for id in ids { try fixture.makeClone(build: id) }
-        let stock = Set(ids.dropFirst())
+        try fixture.makeClone(build: shippedRuntimeID)
 
-        #expect(RunnerStore.state(runners: fixture.runners, verify: { build, _ in
-            stock.contains(build.id) ? ["ntdll is stock"] : []
-        }) == .unpatched(builds: Array(ids.dropFirst()), problems: ids.dropFirst().map { "\($0): ntdll is stock" }))
+        #expect(RunnerStore.state(runners: fixture.runners, verify: { _, _ in ["one", "two"] })
+            == .incomplete(builds: [shippedRuntimeID],
+                           problems: ["\(shippedRuntimeID): one", "\(shippedRuntimeID): two"]))
+        #expect(RunnerState.incomplete(builds: [shippedRuntimeID], problems: []).builds == [shippedRuntimeID])
     }
 
-    @Test("A clone outside the allow list is orphaned, not ready")
+    @Test("A copy outside the allow list is orphaned, not ready")
     func reportsUnsupportedClone() throws {
         let fixture = try Fixture()
-        try fixture.makeClone(build: "1.0.0.1")
+        try fixture.makeClone(build: "wine-0.1")
 
         #expect(RunnerStore.state(runners: fixture.runners) == .none)
-        #expect(RunnerStore.orphanedClones(in: fixture.runners) == ["1.0.0.1"])
+        #expect(RunnerStore.orphanedClones(in: fixture.runners) == ["wine-0.1"])
+        #expect(RunnerStore.installedBuilds(in: fixture.runners).isEmpty)
     }
 
-    @Test("A supported clone with no lib/wine is damaged, not ready")
+    @Test("A supported copy with no lib/wine is damaged, not ready")
     func detectsIncompleteTree() throws {
         let fixture = try Fixture()
-        let version = SupportedRunners.all[0].id
-        try fixture.makeClone(build: version, withWine: false)
+        try fixture.makeClone(build: shippedRuntimeID, withWine: false)
 
         #expect(RunnerStore.state(runners: fixture.runners) == .none)
-        #expect(RunnerStore.damagedClones(in: fixture.runners) == [version])
+        #expect(RunnerStore.damagedClones(in: fixture.runners) == [shippedRuntimeID])
     }
 
-    @Test("Clones are listed by version")
+    @Test("Copies are listed by build, without staging or removal leftovers or loose files")
     func listsClones() throws {
         let fixture = try Fixture()
-        try fixture.makeClone(build: "27.0.0.40921")
-        try fixture.makeClone(build: "26.0.0.1")
+        try fixture.makeClone(build: shippedRuntimeID)
+        try fixture.makeClone(build: "wine-0.1")
+        let fm = FileManager.default
+        try fm.createDirectory(at: fixture.runners.appending(path: ".\(shippedRuntimeID).new"),
+                               withIntermediateDirectories: true)
+        try fm.createDirectory(at: fixture.runners.appending(path: ".wine-0.2.removing"),
+                               withIntermediateDirectories: true)
+        try Data().write(to: fixture.runners.appending(path: "notes"))
+        try fm.createSymbolicLink(
+            at: fixture.runners.appending(path: "linked"),
+            withDestinationURL: SupportPaths.runnerRoot(forBuild: "wine-0.1", runners: fixture.runners))
 
-        #expect(RunnerStore.clonedBuilds(in: fixture.runners) == ["26.0.0.1", "27.0.0.40921"])
+        #expect(RunnerStore.clonedBuilds(in: fixture.runners) == ["wine-0.1", shippedRuntimeID])
+        #expect(RunnerStore.installedBuilds(in: fixture.runners) == [shippedRuntime])
     }
 }

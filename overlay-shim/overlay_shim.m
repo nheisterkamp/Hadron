@@ -1,7 +1,7 @@
 // Shim for the Steam overlay. This was deeply unpleasant to make,
 // fixes HDR stuff and Metal 4.
 //
-// Metal 4 notes: D3DMetal 4 commits a frame on MTL4CommandQueue and the
+// Metal 4 notes: a Metal 4 renderer commits a frame on MTL4CommandQueue and the
 // drawable goes to [drawable present], but Valve's overlay swizzles only the
 // Metal 3 present family. Bridge signalDrawable: to a Metal 3 presentDrawable:
 // on a shared event so the overlay's own hooks see the frame, fixing the
@@ -177,8 +177,8 @@ static id<MTLCommandQueue> sync_queue;
 static id<MTLEvent> frame_ready;
 static uint64_t frame_ready_value;
 
-// The drawable D3DMetal signalled, hooks see it
-// Held without a reference because D3DMetal signals and then
+// The drawable the renderer signalled, hooks see it
+// Held without a reference because the renderer signals and then
 // presents the same drawable in one call, on one thread.
 static id signalled_drawable;
 static uint64_t signalled_value;
@@ -687,8 +687,8 @@ static void ensure_device_hooks(id device)
 	        hooked);
 }
 
-// Device hooks have to be in place before D3DMetal builds its command queues,
-// which D3DMCommandQueue does at CreateCommandQueue
+// Device hooks have to be in place before the renderer builds its command queues,
+// which it does at CreateCommandQueue
 static id shim_MTLCreateSystemDefaultDevice(void)
 {
 	id device = MTLCreateSystemDefaultDevice();
@@ -933,7 +933,7 @@ static void report_renderer_chain(void)
 	interpose(layer, "nextDrawable", (IMP)hook_next_drawable, (IMP *)&next_layer_drawable);
 }
 
-// FEX specific stuff
+// For lsteamclient, which loads the shim by hand when it was not inserted at launch
 __attribute__((visibility("default"))) void np_overlay_shim_install(void)
 {
 	ensure_device_hooks(MTLCreateSystemDefaultDevice());

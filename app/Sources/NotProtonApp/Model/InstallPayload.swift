@@ -1,4 +1,4 @@
-// Deploys core NotProton components into the copy of CrossOver that NotProton deploys to the Steam location
+// Finds the components bundled with the app, which the installer deploys for Steam
 
 import Foundation
 

@@ -1,17 +1,26 @@
-// Clones CrossOver's Wine runtime into ~/Library/Application Support/notproton/runners
+// Copies a Wine runtime into ~/Library/Application Support/notproton/runners
 
 import Darwin
 import Foundation
 
 enum RunnerInstaller {
 
-    static let step = String(localized: "Clone CrossOver")
+    static let step = String(localized: "Copy the Wine runtime")
 
+    // lsteamclient's halves, which a runtime builds in.
+    static let builtins = [
+        (arch: "i386-windows", name: "lsteamclient.dll"),
+        (arch: "x86_64-windows", name: "lsteamclient.dll"),
+        (arch: "x86_64-unix", name: "lsteamclient.so"),
+    ]
+
+    // Returns true when it copied, false when the build was already in place.
+    @discardableResult
     static func clone(
-        from install: CrossOverInstall,
+        from install: RuntimeInstall,
         replacingExisting: Bool = false,
         runners: URL = SupportPaths.runners
-    ) throws -> RunnerBuild {
+    ) throws -> Bool {
         guard case .supported(let build) = install.support else {
             throw StepFailure(
                 step: step,
@@ -25,21 +34,21 @@ enum RunnerInstaller {
         let existing = hasClone(forBuild: build.id, runners: runners)
         let occupied = fm.fileExists(atPath: target.path(percentEncoded: false))
 
-        if !existing || replacingExisting {
+        let copying = !existing || replacingExisting
+        if copying {
             let staging = target.deletingLastPathComponent()
                 .appending(path: ".\(target.lastPathComponent).new")
             try? fm.removeItem(at: staging)
-            try copyPayload(from: install.crossOverRoot, to: staging)
+            try fm.createDirectory(at: runners, withIntermediateDirectories: true)
+            try copyPayload(from: install.root, to: staging)
             if occupied {
                 try fm.removeItem(at: target)
             }
             try fm.moveItem(at: staging, to: target)
         }
 
-        let cloned = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
-        try verifyClone(build: build, root: cloned)
-
-        return build
+        try verifyClone(build: build, root: target)
+        return copying
     }
 
     static let removeStep = String(localized: "Remove build")
@@ -48,9 +57,7 @@ enum RunnerInstaller {
     static func removeClone(
         forBuild build: String,
         runners: URL = SupportPaths.runners,
-        bridge: URL = SupportPaths.bridge,
         toolList: URL = SupportPaths.toolList,
-        compatTools: URL = SupportPaths.Steam.compatTools,
         libraries: [SteamLibrary] = PrefixStore.libraries(),
         running: (URL) -> Bool = { RunnerInstaller.isRunning(from: $0) }
     ) throws -> Bool {
@@ -73,9 +80,7 @@ enum RunnerInstaller {
         try WriteRefused.catching(path) { try fm.moveItem(at: target, to: trash) }
         let changed: Bool
         do {
-            changed = try CompatToolList.sync(
-                runners: runners, bridge: bridge, file: toolList, compatTools: compatTools
-            )
+            changed = try CompatToolList.sync(runners: runners, file: toolList)
         } catch {
             try? fm.moveItem(at: trash, to: target)
             throw error
@@ -91,14 +96,14 @@ enum RunnerInstaller {
     static func removeLeftoverRemovals(runners: URL) {
         let fm = FileManager.default
         let entries = (try? fm.contentsOfDirectory(at: runners, includingPropertiesForKeys: nil)) ?? []
-        for entry in entries where entry.lastPathComponent.hasPrefix(".crossover-")
+        for entry in entries where entry.lastPathComponent.hasPrefix(".")
             && entry.lastPathComponent.hasSuffix(".removing") {
             try? fm.removeItem(at: entry)
         }
     }
 
     // Also catches templates left on a drive that was not present (unplugged or unmounted)
-    // at the time the deployed copy of CrossOver was removed.
+    // at the time the installed runtime was removed.
     static func removeStalePrefixTemplates(
         runners: URL, libraries: [SteamLibrary], reportBusy: Bool = true
     ) -> [StepFailure] {
@@ -151,7 +156,7 @@ enum RunnerInstaller {
                 guard info.st_mode & S_IFMT == S_IFDIR else { throw POSIXError(.ENOTDIR) }
 
                 for name in try templateDirectoryNames(root) where !kept.contains(name) {
-                    let template = name.wholeMatch(of: #/crossover-[A-Za-z0-9.-]+-(x86_64|aarch64)-unix/#) != nil
+                    let template = name.wholeMatch(of: #/[A-Za-z0-9.-]+-(x86_64|aarch64)-unix/#) != nil
                     guard template || (builds.isEmpty && name == SupportPaths.bridgeCacheFolder) else { continue }
                     do {
                         try removeTemplateEntry(name, in: root, device: info.st_dev)
@@ -233,27 +238,22 @@ enum RunnerInstaller {
     }
 
     static func hasClone(forBuild build: String, runners: URL = SupportPaths.runners) -> Bool {
-        let root = SupportPaths.clonedRoot(forBuild: build, runners: runners)
+        let root = SupportPaths.runnerRoot(forBuild: build, runners: runners)
         return FileManager.default.fileExists(
             atPath: root.appending(path: "lib/wine").path(percentEncoded: false)
         )
     }
 
     static func copyPayload(from payload: URL, to target: URL) throws {
-        let fm = FileManager.default
-        try fm.createDirectory(at: target, withIntermediateDirectories: true)
-
         let source = payload.path(percentEncoded: false)
-        let landing = target.appending(path: "CrossOver")
-        let destination = landing.path(percentEncoded: false)
+        let destination = target.path(percentEncoded: false)
 
-        let cloned = try Shell.run("/bin/cp", ["-c", "-R", source, destination])
-        if cloned.status == 0 {
-            scrubDownloadMarkers(at: landing)
+        // A clone where the volume supports it, a plain copy where it does not.
+        if try Shell.run("/bin/cp", ["-c", "-R", source, destination]).status == 0 {
+            scrubDownloadMarkers(at: target)
             return
         }
-
-        try? fm.removeItem(at: landing)
+        try? FileManager.default.removeItem(at: target)
         let copied = try Shell.run("/bin/cp", ["-R", source, destination])
         guard copied.status == 0 else {
             throw StepFailure(
@@ -261,7 +261,7 @@ enum RunnerInstaller {
                 detail: String(localized: "Copying \(source) failed. \(copied.stderr.trimmingCharacters(in: .whitespacesAndNewlines))")
             )
         }
-        scrubDownloadMarkers(at: landing)
+        scrubDownloadMarkers(at: target)
     }
 
     static func scrubDownloadMarkers(at payload: URL) {
@@ -271,28 +271,22 @@ enum RunnerInstaller {
     }
 
     static func verifyClone(build: RunnerBuild, root: URL) throws {
-        if build.source == .runtime {
-            guard WineRuntime.build(atRoot: root)?.id == build.id else {
-                throw StepFailure(step: step, detail: String(localized: "The copy at \(root.path(percentEncoded: false)) is not Wine runtime \(build.id)."))
-            }
-            guard FileManager.default.isExecutableFile(
-                atPath: CrossOverSource.unixLoader(inRoot: root).path(percentEncoded: false)
-            ) else {
-                throw StepFailure(step: step, detail: String(localized: "The copy has no Wine loader at x86_64-unix/wine."))
-            }
-            return
+        guard RuntimeSource.runtimeID(atRoot: root) == build.id else {
+            throw StepFailure(step: step, detail: String(localized: "The copy at \(root.path(percentEncoded: false)) is not Wine runtime \(build.id)."))
         }
-        let loader = Clean.copy(of: CrossOverSource.unixLoader(inRoot: root))
-        guard let hash = Digest.sha256IfPresent(loader) else {
-            throw StepFailure(step: step, detail: String(localized: "The clone has no Wine loader at \(loader.lastPathComponent)."))
+        guard FileManager.default.isExecutableFile(
+            atPath: RuntimeSource.unixLoader(inRoot: root).path(percentEncoded: false)
+        ) else {
+            throw StepFailure(step: step, detail: String(localized: "The copy has no Wine loader at x86_64-unix/wine."))
         }
-        guard hash == build.loaderSHA256 else {
-            throw StepFailure(
-                step: step,
-                detail: String(localized: "The cloned Wine loader at \(loader.lastPathComponent) does not match build \(build.id). Expected \(build.loaderSHA256.prefix(16)), found \(hash.prefix(16)).")
-            )
-        }
+    }
 
-        try CrossOverSource.verifyPatchInputs(root: root, build: build)
+    // What an installed runtime is missing, for the status pane.
+    static func problems(build: RunnerBuild, root: URL) -> [String] {
+        builtins.compactMap { builtin in
+            let file = root.appending(path: "lib/wine/\(builtin.arch)/\(builtin.name)")
+            return FileManager.default.fileExists(atPath: file.path(percentEncoded: false))
+                ? nil : String(localized: "\(builtin.arch)/\(builtin.name) is missing")
+        }
     }
 }

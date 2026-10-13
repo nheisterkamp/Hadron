@@ -235,11 +235,11 @@ static void tool_list_cases(void) {
         check(0, "the tool list fixture can be written");
         return;
     }
-    fputs("notproton\t27.0.0.40921-fex\tfex\tCrossOver Preview (FEX)\n"
-          "notproton-fex-41069\t27.0.0.41069-fex\tfex\tCrossOver Preview 41069 (FEX)\n"
-          "notproton-fex-rosetta\t27.0.0.40921-fex\trosetta\tCrossOver Preview (Rosetta)\n"
-          "notproton-26.3\t26.3.0.39832\trosetta\tCrossOver 26.3\n"
-          "notproton\t26.3.0.39832\trosetta\tDuplicate\n"
+    fputs("notproton-wine\twine-11.15\trosetta\tHadron Wine 11.15\n"
+          "notproton-arm\t1.0\tfex\tArm Tool\n"
+          "notproton-wine-11.14\twine-11.14\trosetta\tHadron Wine 11.14\n"
+          "notproton-old\t2.0.1\trosetta\tOld Tool\n"
+          "notproton-wine\twine-11.14\trosetta\tDuplicate\n"
           "proton-other\t1\trosetta\tForeign\n"
           "notproton-x\t1\tarm\tBad flavor\n"
           "notproton-q\t1\trosetta\tQuote\"d\n"
@@ -251,27 +251,20 @@ static void tool_list_cases(void) {
     unlink(path);
 
     check(kept == 4, "only well-formed, unique, notproton-named lines are kept");
-    check(strcmp(g_tools[0].name, "notproton") == 0
-          && strcmp(g_tools[0].flavor, "fex") == 0, "the first line stays first");
-    check(strcmp(g_tools[3].build, "26.3.0.39832") == 0
-          && strcmp(g_tools[3].dir, "/tools/notproton-26.3") == 0,
+    check(strcmp(g_tools[0].name, "notproton-wine") == 0
+          && strcmp(g_tools[0].flavor, "rosetta") == 0, "the first line stays first");
+    check(strcmp(g_tools[1].flavor, "fex") == 0, "the fex flavor still parses");
+    check(strcmp(g_tools[3].build, "2.0.1") == 0
+          && strcmp(g_tools[3].dir, "/tools/notproton-old") == 0,
           "each tool carries its build and directory");
 
     uint8_t *mgr = build_manager(3, -1);
-    *(const char **)(entries + np_compat_tool_stride() + COMPAT_TOOL_NAME_OFF) = "notproton-26.3";
+    *(const char **)(entries + np_compat_tool_stride() + COMPAT_TOOL_NAME_OFF) = "notproton-old";
     check(np_compat_registered_tool(mgr) == entries + np_compat_tool_stride(),
           "the most preferred tool the manager holds is the default");
-    *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "notproton";
+    *(const char **)(entries + COMPAT_TOOL_NAME_OFF) = "notproton-wine";
     check(np_compat_registered_tool(mgr) == entries,
           "the first listed tool wins when the manager holds it");
-
-    const char *fex[3] = { NULL, NULL, NULL };
-    check(np_compat_fex_tools(fex, 3) == 2 && strcmp(fex[0], "notproton") == 0
-          && strcmp(fex[1], "notproton-fex-41069") == 0 && !fex[2],
-          "only the fex flavor counts as FEX, not a FEX build's Rosetta tool");
-    fex[0] = fex[1] = NULL;
-    check(np_compat_fex_tools(fex, 1) == 1 && strcmp(fex[0], "notproton") == 0 && !fex[1],
-          "the FEX list stops at its limit, keeping the first listed");
 
     f = fopen(path, "w");
     if (!f) {
@@ -287,7 +280,6 @@ static void tool_list_cases(void) {
           && strcmp(g_tools[0].dir, "/tools/notproton-0") == 0, "a long list keeps every tool");
     check(strcmp(np_compat_fallback_tool_name(), "notproton-0") == 0,
           "the fallback is the first configured tool");
-    check(np_compat_fex_tools(fex, 3) == 0, "a list with no FEX tool has no FEX names");
 
     check(np_compat_load_tool_list("out/compatcheck-missing", "/tools") == 0
           && !g_tool_list_present, "a missing list keeps no tools and says so");
@@ -297,7 +289,7 @@ static void tool_launch_cases(void) {
     static const char *tool[] = {
         "'/tools/compatibilitytools.d/notproton/.'/run waitforexitandrun  '/g/game.exe'",
         "A=1 '/tools/compatibilitytools.d/notproton-26.3/.'/run waitforexitandrun  '/g/game.exe' -x",
-        "'/tools/compatibilitytools.d/notproton-fex-rosetta/.'/run run ",
+        "'/tools/compatibilitytools.d/notproton-wine/.'/run run ",
         "'/tools/compatibilitytools.d/notproton'/run waitforexitandrun  '/g/game.exe'",
         "'/Volumes/Ext/Steam/compatibilitytools.d/notproton/.'/run waitforexitandrun '/g/game.exe'",
     };
@@ -336,21 +328,27 @@ static void stale_tool_cases(void) {
         check(0, "the tools directory fixture can be made");
         return;
     }
-    char current[700], legacy[700], user[700], lookalike[700];
-    snprintf(current, sizeof(current), "%s/notproton-26.3", root);
+    char current[700], legacy[700], older[700], user[700], near[700], lookalike[700];
+    snprintf(current, sizeof(current), "%s/notproton-wine-11.14", root);
     snprintf(legacy, sizeof(legacy), "%s/notproton", root);
+    snprintf(older, sizeof(older), "%s/notproton-old", root);
     snprintf(user, sizeof(user), "%s/notproton-mine", root);
+    snprintf(near, sizeof(near), "%s/notproton-near", root);
     snprintf(lookalike, sizeof(lookalike), "%s/notproton-copy", root);
-    const char *dirs[] = { current, legacy, user, lookalike };
-    for (size_t i = 0; i < 4; i++) mkdir(dirs[i], 0755);
+    const char *dirs[] = { current, legacy, older, user, near, lookalike };
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) mkdir(dirs[i], 0755);
 
     put(current, "flavor", "rosetta\n");
-    put(current, "run", "#!/bin/sh\n# notproton CrossOver compatibility tool shim\n");
-    put(legacy, "run", "#!/bin/sh\n# notproton CrossOver compatibility tool shim\nset -e\n");
+    put(current, "run", "#!/bin/sh\n# notproton compatibility tool shim\n");
+    put(legacy, "run", "#!/bin/sh\n# notproton compatibility tool shim\nset -e\n");
     put(legacy, "toolmanifest.vdf", "\"manifest\" {}\n");
     put(legacy, "compatibilitytool.vdf", "\"compatibilitytools\" {}\n");
+    // Older builds named their runtime in the marker.
+    put(older, "run", "#!/bin/sh\n# notproton Some Runtime compatibility tool shim\nset -e\n");
     put(user, "run", "#!/bin/sh\nexec my-wine \"$@\"\n");
-    put(lookalike, "run", "#!/bin/sh\n# notproton CrossOver compatibility tool shim\n");
+    put(near, "run", "#!/bin/sh\n# notproton compatibility tool shim wrapper\n"
+                     "# not notproton compatibility tool shim\n");
+    put(lookalike, "run", "#!/bin/sh\n# notproton Some Runtime compatibility tool shim\n");
     put(lookalike, "notes.txt", "mine\n");
 
     g_tool_count = 0;
@@ -358,7 +356,9 @@ static void stale_tool_cases(void) {
 
     check(!exists(current), "an unlisted tool with a flavor file is removed");
     check(!exists(legacy), "the single-tool dylib's directory is removed");
+    check(!exists(older), "a run script with an older build's marker is ours");
     check(exists(user), "a notproton directory the user wrote stays");
+    check(exists(near), "a line that only looks like the marker is not ours");
     char notes[768];
     snprintf(notes, sizeof(notes), "%s/notes.txt", lookalike);
     check(exists(notes), "files this project did not write stay with their directory");
@@ -368,8 +368,24 @@ static void stale_tool_cases(void) {
     snprintf(path, sizeof(path), "%s/run", user);
     remove(path);
     rmdir(user);
+    snprintf(path, sizeof(path), "%s/run", near);
+    remove(path);
+    rmdir(near);
     rmdir(lookalike);
     rmdir(root);
+}
+
+// The shim written today has to carry the marker, so the next build can tell the
+// directory is its own.
+static void run_mark_cases(void) {
+    char head[128];
+    snprintf(head, sizeof(head), "%s", RUN_SCRIPT);
+    check(strstr(head, RUN_SCRIPT_MARK) != NULL, "the run script carries the marker early on");
+    check(has_run_mark(head), "the run script is recognized as ours");
+    check(!has_run_mark("#!/bin/sh\n# notproton compatibility tool shim"),
+          "a marker without its line end is not one");
+    check(!has_run_mark("#!/bin/sh\n# notproton\n compatibility tool shim\n"),
+          "a marker split over two lines is not one");
 }
 
 static uint32_t stub_platforms_value;
@@ -455,6 +471,7 @@ int main(void) {
     tool_list_cases();
     tool_launch_cases();
     stale_tool_cases();
+    run_mark_cases();
     installed_fn_cases();
 
     if (failures) {

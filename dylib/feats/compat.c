@@ -5,7 +5,6 @@
 
 #include <dirent.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -483,7 +482,26 @@ static int write_tool(const tool_entry_t *tool) {
     return 0;
 }
 
-#define RUN_SCRIPT_MARK "\n# notproton CrossOver compatibility tool shim\n"
+#define RUN_SCRIPT_MARK "\n# notproton compatibility tool shim\n"
+
+// Older builds named their runtime in the marker, so any line of the form
+// "# notproton ... compatibility tool shim" is ours too.
+#define RUN_SCRIPT_MARK_HEAD "\n# notproton"
+#define RUN_SCRIPT_MARK_TAIL " compatibility tool shim\n"
+
+static int has_run_mark(const char *head) {
+    if (strstr(head, RUN_SCRIPT_MARK)) return 1;
+    const size_t lead = sizeof(RUN_SCRIPT_MARK_HEAD) - 1, tail = sizeof(RUN_SCRIPT_MARK_TAIL) - 1;
+    for (const char *at = strstr(head, RUN_SCRIPT_MARK_HEAD " "); at;
+         at = strstr(at + 1, RUN_SCRIPT_MARK_HEAD " ")) {
+        const char *eol = strchr(at + 1, '\n');
+        if (!eol) break;
+        size_t len = (size_t)(eol + 1 - at);
+        if (len >= lead + tail && memcmp(eol + 1 - tail, RUN_SCRIPT_MARK_TAIL, tail) == 0)
+            return 1;
+    }
+    return 0;
+}
 
 static int written_here(const char *tool_dir) {
     char path[768];
@@ -497,7 +515,7 @@ static int written_here(const char *tool_dir) {
     size_t got = fread(head, 1, sizeof(head) - 1, f);
     fclose(f);
     head[got] = '\0';
-    return strstr(head, RUN_SCRIPT_MARK) != NULL;
+    return has_run_mark(head);
 }
 
 static void remove_tool(const char *tools_dir, const char *name) {
@@ -760,7 +778,7 @@ static void *find_tool(void *compat_mgr, const char *wanted) {
     return NULL;
 }
 
-void np_compat_register_crossover(void *compat_mgr) {
+void np_compat_register_tools(void *compat_mgr) {
     static int registered = 0;
 
     // Every compat query arrives on the instance the properties page reads, which is
@@ -781,7 +799,7 @@ void np_compat_register_crossover(void *compat_mgr) {
     // to the local run script.
     uint8_t (*buffers)[COMPAT_TOOL_STRIDE + 64] = calloc((size_t)g_tool_count, sizeof(*buffers));
     if (g_tool_count && !buffers) {
-        NP_WARN("np_compat_register_crossover: out of memory, no tool registered");
+        NP_WARN("np_compat_register_tools: out of memory, no tool registered");
         return;
     }
     static const char from_oslist[] = "windows";
@@ -791,7 +809,7 @@ void np_compat_register_crossover(void *compat_mgr) {
         const tool_entry_t *t = &g_tools[i];
 
         if (find_tool(compat_mgr, t->name)) {
-            NP_LOG("np_compat_register_crossover: %s already registered from disk, "
+            NP_LOG("np_compat_register_tools: %s already registered from disk, "
                    "skipping the runtime entry", t->name);
             continue;
         }
@@ -807,7 +825,7 @@ void np_compat_register_crossover(void *compat_mgr) {
         *(const char **)(tool + np_compat_tool_off(COMPAT_TOOL_TO_OSLIST_OFF))   = to_oslist;
 
         g_yld_register_tool(compat_mgr, tool);
-        NP_LOG("np_compat_register_crossover: registered %s (build %s) into manager 0x%llx",
+        NP_LOG("np_compat_register_tools: registered %s (build %s) into manager 0x%llx",
                t->name, t->build, (unsigned long long)(uintptr_t)compat_mgr);
     }
 }
@@ -815,23 +833,6 @@ void np_compat_register_crossover(void *compat_mgr) {
 const char *np_compat_fallback_tool_name(void) {
     load_tool_list_once();
     return g_tool_count > 0 ? g_tools[0].name : TOOL_DIR_NAME;
-}
-
-size_t np_compat_fex_tools(const char **names, size_t max) {
-    load_tool_list_once();
-    size_t n = 0;
-    for (int i = 0; i < g_tool_count; i++) {
-        if (strcmp(g_tools[i].flavor, "fex") != 0) continue;
-        if (n == max) {
-            static atomic_flag warned = ATOMIC_FLAG_INIT;
-            if (!atomic_flag_test_and_set(&warned))
-                NP_WARN("np_compat_fex_tools: more than %zu FEX tools, %s and later "
-                        "are left out", max, g_tools[i].name);
-            break;
-        }
-        names[n++] = g_tools[i].name;
-    }
-    return n;
 }
 
 void *np_compat_registered_tool(void *compat_mgr) {

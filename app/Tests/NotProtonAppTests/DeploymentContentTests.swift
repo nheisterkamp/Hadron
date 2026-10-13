@@ -146,7 +146,7 @@ struct DeploymentContentTests {
                                    iconmakerPresent: true, appinfoPresent: true, signatureDatabase: "fixture",
                                    legacyCompatPresent: 0, legacyCompatExpected: 0, manifestProblem: nil)
         status.snapshot = StatusSnapshot(steam: .notInstalled, steamRunning: false, updateBlocked: false,
-                                         crossOver: [], runner: .none, payload: payload,
+                                         runtimes: [], runner: .none, payload: payload,
                                          installContent: .newerInstalled)
         #expect(!status.canInstall)
         status.snapshot?.installContent = .unavailable("invalid record")
@@ -163,14 +163,14 @@ struct DeploymentContentTests {
                                    iconmakerPresent: true, appinfoPresent: true, signatureDatabase: "fixture",
                                    legacyCompatPresent: 0, legacyCompatExpected: 0, manifestProblem: nil)
         status.snapshot = StatusSnapshot(steam: .notInstalled, steamRunning: false, updateBlocked: false,
-                                         crossOver: [], runner: .none, payload: payload,
+                                         runtimes: [], runner: .none, payload: payload,
                                          installContent: .newerInstalled)
-        status.requestBuildRemoval("crossover-26.0")
+        status.requestBuildRemoval("wine-0.1")
         #expect(status.pendingRemoval == nil)
         #expect(status.pendingConfirmation == nil)
         status.snapshot?.installContent = .unrecorded(["notproton.dylib"])
-        status.requestBuildRemoval("crossover-26.0")
-        #expect(status.pendingRemoval == "crossover-26.0")
+        status.requestBuildRemoval("wine-0.1")
+        #expect(status.pendingRemoval == "wine-0.1")
         #expect(status.pendingConfirmation == .removeBuild)
     }
 
@@ -231,8 +231,7 @@ struct DeploymentContentTests {
         let root = try scratchDirectory("content-tools")
         defer { try? FileManager.default.removeItem(at: root) }
         let runners = root.appending(path: "runners")
-        let runner = SupportPaths.clonedRoot(forBuild: "26.3.0.39832", runners: runners)
-        try FileManager.default.createDirectory(at: runner.appending(path: "lib/wine"), withIntermediateDirectories: true)
+        try makeInstalledRuntime(in: runners)
         let list = root.appending(path: "tools")
         for text in [nil, "", "incorrect"] as [String?] {
             if let text { try Data(text.utf8).write(to: list) }
@@ -246,25 +245,24 @@ struct DeploymentContentTests {
         #expect(Digest.sha256IfPresent(pin.destination) == pin.hash)
     }
 
-    @Test("The staged ntdll and runner ntdll are checked independently")
-    func includesStagedNtdll() throws {
-        let root = try scratchDirectory("content-ntdll")
+    // A runtime builds lsteamclient in, so nothing inside an installed runtime is the
+    // app's to pin. Only the bridge files and the tool list are.
+    @Test("An installed runtime adds only the tool list to the pinned files")
+    func pinsNothingInsideRuntime() throws {
+        let root = try scratchDirectory("content-runtime")
         defer { try? FileManager.default.removeItem(at: root) }
         let runners = root.appending(path: "runners")
-        let build = SupportedRunners.all[0]
-        let runner = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
-        try FileManager.default.createDirectory(at: runner.appending(path: "lib/wine"), withIntermediateDirectories: true)
         let bridge = root.appending(path: "bridge")
+        let before = try DeploymentContent.pinnedFiles(bridge: bridge, runners: runners)
+        #expect(!before.contains { $0.name == "tools" })
+
+        let runner = try makeInstalledRuntime(in: runners)
         let pins = try DeploymentContent.pinnedFiles(bridge: bridge, runners: runners)
-        for (arch, hash) in build.patchedNtdll {
-            let staged = NtdllPatcher.stagedCopy(of: arch, build: build.id, in: bridge)
-            let pin = try #require(pins.first { $0.destination == staged })
-            #expect(pin.hash == hash)
-            #expect(pins.contains { $0.destination == runner.appending(path: "lib/wine/\(arch.rawValue)/ntdll.dll") })
-            try FileManager.default.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data("wrong staged copy".utf8).write(to: staged)
-            #expect(Digest.sha256IfPresent(pin.destination) != pin.hash)
-        }
+
+        #expect(pins.count == before.count + 1)
+        #expect(pins.map(\.name).filter { !$0.hasPrefix("bridge/") } == ["tools"])
+        let inside = runner.standardizedFileURL.path(percentEncoded: false)
+        #expect(!pins.contains { $0.destination.standardizedFileURL.path(percentEncoded: false).hasPrefix(inside) })
     }
 
     @Test("Signature comparison refuses truncated headers, overlapping slices and invalid command sizes")

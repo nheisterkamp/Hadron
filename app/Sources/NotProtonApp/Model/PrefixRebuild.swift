@@ -12,7 +12,7 @@ extension PrefixTools {
         keepBackup: Bool = true
     ) throws -> URL? {
         let kept = try recreate(
-            prefix, runner: SupportPaths.clonedRoot(forBuild: tool.build, runners: runners),
+            prefix, runner: SupportPaths.runnerRoot(forBuild: tool.build, runners: runners),
             flavor: tool.tool.flavor, now: now, keepBackup: keepBackup
         )
         try writeBuildRecord(tool, for: prefix)
@@ -23,7 +23,7 @@ extension PrefixTools {
     static func recreate(
         _ prefix: WinePrefix,
         runner: URL,
-        flavor: CompatTool.Flavor = .fex,
+        flavor: CompatTool.Flavor = .rosetta,
         now: Date = .now,
         keepBackup: Bool = true
     ) throws -> URL? {
@@ -161,9 +161,6 @@ extension PrefixTools {
             try? fm.createSymbolicLink(
                 atPath: link.path(percentEncoded: false), withDestinationPath: target)
         }
-        try? fm.createSymbolicLink(
-            atPath: users.appending(path: "crossover").path(percentEncoded: false),
-            withDestinationPath: "steamuser")
     }
 }
 
@@ -224,9 +221,7 @@ private final class Carry {
     }
 
     private func landing(forProfile profile: URL, under users: URL) -> URL {
-        let name = profile.lastPathComponent
-        let shared = name == "crossover" || name == "steamuser"
-        return users.appending(path: shared ? "steamuser" : name)
+        users.appending(path: profile.lastPathComponent)
     }
 
     private func merge(_ source: URL, into landing: URL) {

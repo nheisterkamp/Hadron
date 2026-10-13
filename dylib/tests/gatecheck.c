@@ -27,7 +27,7 @@ static void wrong(const char *fmt, ...) {
 static void *rewrite_fallback(void *arg) {
     atomic_int *stop = arg;
     while (!atomic_load(stop))
-        np_webpatch_set_fallback_tool("notproton-fex");
+        np_webpatch_set_fallback_tool("notproton-wine");
     return NULL;
 }
 
@@ -36,7 +36,7 @@ static void check_fallback(void) {
         "return t?(0,i.jsx)(m.B,{feature:p.OK,label:(0,l.we)"
         "(\"#Settings_SteamPlay_DefaultTool\"),rgOptions:A,disabled:0==A.length,"
         "selectedOption:t,onChange:e=>g(e.data)}):null";
-    np_webpatch_set_fallback_tool("notproton-fex");
+    np_webpatch_set_fallback_tool("notproton-wine");
     atomic_int stop = 0;
     pthread_t writer;
     if (pthread_create(&writer, NULL, rewrite_fallback, &stop) != 0) {
@@ -50,8 +50,8 @@ static void check_fallback(void) {
         char *out = np_webpatch_transform((const uint8_t *)source, sizeof(source) - 1,
                                          &length, NULL);
         int ok = out && !memchr(out, '\0', length)
-            && strstr(out, "A.some(e=>e.data===\"notproton-fex\")")
-            && strstr(out, "selectedOption:t||\"notproton-fex\"");
+            && strstr(out, "A.some(e=>e.data===\"notproton-wine\")")
+            && strstr(out, "selectedOption:t||\"notproton-wine\"");
         free(out);
         if (!ok) {
             wrong("concurrent fallback writes changed a chunk's tool name");
@@ -61,30 +61,6 @@ static void check_fallback(void) {
     atomic_store(&stop, 1);
     pthread_join(writer, NULL);
     np_log_level = saved;
-}
-
-static void check_fex_tools(void) {
-    np_webpatch_set_fex_tools((const char *[]){ "notproton-fex", "bad name", NULL, "",
-                                                "x\"y", "notproton-fex-41069" }, 6);
-    if (strcmp(g_fex_tools, "[\"notproton-fex\",\"notproton-fex-41069\"]") != 0)
-        wrong("the FEX tool array is %s", g_fex_tools);
-
-    np_webpatch_set_fex_tools(NULL, 0);
-    if (strcmp(g_fex_tools, "[]") != 0) wrong("no FEX tools gives %s", g_fex_tools);
-
-    char names[NP_WEBPATCH_FEX_TOOLS_MAX + 1][NP_TOOL_NAME_MAX];
-    const char *list[NP_WEBPATCH_FEX_TOOLS_MAX + 1];
-    for (int i = 0; i <= NP_WEBPATCH_FEX_TOOLS_MAX; i++) {
-        memset(names[i], 'a', NP_TOOL_NAME_MAX - 1);
-        names[i][NP_TOOL_NAME_MAX - 1] = '\0';
-        names[i][0] = (char)('A' + i);
-        list[i] = names[i];
-    }
-    np_webpatch_set_fex_tools(list, NP_WEBPATCH_FEX_TOOLS_MAX + 1);
-    size_t want = 2 + NP_WEBPATCH_FEX_TOOLS_MAX * (NP_TOOL_NAME_MAX + 2) - 1;
-    if (strlen(g_fex_tools) != want || strchr(g_fex_tools, 'A' + NP_WEBPATCH_FEX_TOOLS_MAX))
-        wrong("the longest FEX tool array is %zu bytes, not %zu", strlen(g_fex_tools), want);
-    np_webpatch_set_fex_tools(NULL, 0);
 }
 
 // Invariants the transform relies on but cannot check at run time. A replacement still
@@ -278,10 +254,9 @@ int main(int argc, char **argv) {
     if (argc == 4 && strcmp(argv[1], "--extract") == 0)
         return extract(argv[2], argv[3]);
 
-    if (argc < 2) { selfcheck(); check_fallback(); check_fex_tools(); return g_wrong; }
+    if (argc < 2) { selfcheck(); check_fallback(); return g_wrong; }
 
-    np_webpatch_set_fallback_tool("notproton-fex");
-    np_webpatch_set_fex_tools((const char *[]){ "notproton-fex", "notproton-fex-41069" }, 2);
+    np_webpatch_set_fallback_tool("notproton-wine");
 
     for (int i = 1; i < argc; i++) {
         size_t len = 0;

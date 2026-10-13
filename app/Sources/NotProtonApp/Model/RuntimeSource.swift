@@ -1,32 +1,28 @@
-// Finds CrossOver installs on disk and checks for support
+// Finds Wine runtimes on disk: folders built by runtime/build-wine.sh, in the runtimes
+// folder or added by hand.
 
 import Foundation
 
-enum CrossOverSupport: Sendable, Equatable {
+enum RuntimeSupport: Sendable, Equatable {
     case supported(RunnerBuild)
     case unsupportedBuild(String)
-    case unreadable
 }
 
-struct CrossOverInstall: Sendable, Identifiable {
-    let bundle: URL
-    let releaseVersion: String?
-    let support: CrossOverSupport
+struct RuntimeInstall: Sendable, Identifiable {
+    let root: URL
+    let support: RuntimeSupport
 
-    // Selected by the user rather than found on disk by tool.
+    // Selected by the user rather than found in the runtimes folder.
     var isManual = false
 
-    // A WineRuntime folder rather than a CrossOver app. The folder is the root itself.
-    var isRuntime = false
+    var id: String { root.path(percentEncoded: false) }
 
-    var id: String { bundle.path(percentEncoded: false) }
     var name: String {
-        isRuntime ? "Hadron \(releaseVersion ?? bundle.lastPathComponent)"
-            : bundle.deletingPathExtension().lastPathComponent
+        switch support {
+        case .supported(let build): "Hadron \(build.releaseVersion)"
+        case .unsupportedBuild(let id): "Hadron \(id)"
+        }
     }
-    var crossOverRoot: URL { isRuntime ? bundle : SupportPaths.crossOverRoot(inBundle: bundle) }
-
-    var isPreview: Bool { name.localizedCaseInsensitiveContains("Preview") }
 
     var isUsable: Bool {
         if case .supported = support { return true }
@@ -34,168 +30,95 @@ struct CrossOverInstall: Sendable, Identifiable {
     }
 }
 
-enum CrossOverSource {
+enum RuntimeSource {
 
-    static let searchRoots: [URL] = [
-        URL(filePath: "/Applications", directoryHint: .isDirectory),
-        SupportPaths.home.appending(path: "Applications", directoryHint: .isDirectory),
-    ]
+    // build-wine.sh writes the build id into this file at the runtime root.
+    static let markerName = "notproton-runtime"
 
-    private static let manualKey = "manualCrossOverPaths"
-    // 1.0/1.0.1 kept a single chosen copy under this key.
-    private static let legacyManualKey = "manualCrossOverPath"
-
-    static func manualBundles(_ defaults: UserDefaults = .standard) -> [URL] {
-        let paths = defaults.stringArray(forKey: manualKey)
-            ?? defaults.string(forKey: legacyManualKey).map { [$0] } ?? []
-        return paths.filter { !$0.isEmpty }.map { URL(filePath: $0, directoryHint: .isDirectory) }
+    static var searchRoot: URL {
+        SupportPaths.support.appending(path: "runtimes", directoryHint: .isDirectory)
     }
 
-    static func setManualBundles(_ bundles: [URL], _ defaults: UserDefaults = .standard) {
-        defaults.set(bundles.map { $0.path(percentEncoded: false) }, forKey: manualKey)
-        defaults.removeObject(forKey: legacyManualKey)
+    private static let manualKey = "manualRuntimePaths"
+
+    static func manualRoots(_ defaults: UserDefaults = .standard) -> [URL] {
+        (defaults.stringArray(forKey: manualKey) ?? [])
+            .filter { !$0.isEmpty }.map { URL(filePath: $0, directoryHint: .isDirectory) }
     }
 
-    static func addManualBundle(_ bundle: URL, _ defaults: UserDefaults = .standard) {
-        let current = manualBundles(defaults)
-        guard !current.contains(where: { same($0, bundle) }) else { return }
-        setManualBundles(current + [bundle], defaults)
+    static func setManualRoots(_ roots: [URL], _ defaults: UserDefaults = .standard) {
+        defaults.set(roots.map { $0.path(percentEncoded: false) }, forKey: manualKey)
     }
 
-    static func removeManualBundle(_ bundle: URL, _ defaults: UserDefaults = .standard) {
-        setManualBundles(manualBundles(defaults).filter { !same($0, bundle) }, defaults)
+    static func addManualRoot(_ root: URL, _ defaults: UserDefaults = .standard) {
+        let current = manualRoots(defaults)
+        guard !current.contains(where: { same($0, root) }) else { return }
+        setManualRoots(current + [root], defaults)
     }
 
-    static func isSearched(_ bundle: URL) -> Bool {
-        let parent = bundle.standardizedFileURL.deletingLastPathComponent()
-        return searchRoots.contains { same($0, parent) }
+    static func removeManualRoot(_ root: URL, _ defaults: UserDefaults = .standard) {
+        setManualRoots(manualRoots(defaults).filter { !same($0, root) }, defaults)
     }
 
+    static func isSearched(_ root: URL) -> Bool {
+        same(root.standardizedFileURL.deletingLastPathComponent(), searchRoot)
+    }
+
+    // A folder URL may or may not end in a slash, depending on how it was made.
     static func same(_ a: URL, _ b: URL) -> Bool {
-        a.standardizedFileURL.path(percentEncoded: false) == b.standardizedFileURL.path(percentEncoded: false)
+        func path(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path(percentEncoded: false)
+            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        }
+        return path(a) == path(b)
     }
 
-    // A CrossOver bundle without this directory is bad!
-    static func looksLikeCrossOver(_ bundle: URL) -> Bool {
-        if WineRuntime.isRuntime(bundle) { return true }
-        let root = SupportPaths.crossOverRoot(inBundle: bundle)
-        return FileManager.default.fileExists(
-            atPath: root.appending(path: "lib/wine").path(percentEncoded: false)
-        )
+    static func runtimeID(atRoot root: URL) -> String? {
+        guard let text = try? String(contentsOf: root.appending(path: markerName), encoding: .utf8) else { return nil }
+        let id = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.isEmpty ? nil : id
     }
 
-    // Runtimes are folders, found here or added by hand.
-    static var runtimeRoot: URL {
-        SupportPaths.applicationSupport.appending(path: "runtimes", directoryHint: .isDirectory)
+    static func looksLikeRuntime(_ root: URL) -> Bool {
+        runtimeID(atRoot: root) != nil
+            && FileManager.default.fileExists(atPath: root.appending(path: "lib/wine").path(percentEncoded: false))
     }
 
-    static func discover() -> [CrossOverInstall] {
-        let fm = FileManager.default
-        var found: [CrossOverInstall] = []
+    static func discover() -> [RuntimeInstall] {
+        var found: [RuntimeInstall] = []
         var seen: Set<String> = []
 
-        func consider(_ bundle: URL, isManual: Bool) {
-            let key = bundle.standardizedFileURL.path(percentEncoded: false)
-            guard !seen.contains(key), looksLikeCrossOver(bundle) else { return }
+        func consider(_ root: URL, isManual: Bool) {
+            let key = root.standardizedFileURL.path(percentEncoded: false)
+            guard !seen.contains(key), looksLikeRuntime(root) else { return }
             seen.insert(key)
-            found.append(inspect(bundle: bundle, isManual: isManual))
+            found.append(inspect(root: root, isManual: isManual))
         }
 
-        for manual in manualBundles() where !isSearched(manual) { consider(manual, isManual: true) }
-
-        for root in searchRoots {
-            let entries = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-            for entry in entries where entry.pathExtension == "app" {
-                guard entry.deletingPathExtension().lastPathComponent.hasPrefix("CrossOver") else { continue }
-                consider(entry, isManual: false)
-            }
-        }
-
-        let runtimes = (try? fm.contentsOfDirectory(at: runtimeRoot, includingPropertiesForKeys: nil)) ?? []
-        for entry in runtimes where WineRuntime.isRuntime(entry) { consider(entry, isManual: false) }
+        for manual in manualRoots() where !isSearched(manual) { consider(manual, isManual: true) }
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: searchRoot, includingPropertiesForKeys: nil)) ?? []
+        for entry in entries { consider(entry, isManual: false) }
 
         return found.sorted(by: preferred)
     }
 
-    static func preferred(_ a: CrossOverInstall, _ b: CrossOverInstall) -> Bool {
-        // Hadron's own runtime first, so installing never stops at a CrossOver license.
-        if a.isUsable && b.isUsable && a.isRuntime != b.isRuntime { return a.isRuntime }
-        if a.isManual != b.isManual { return a.isManual }
+    static func preferred(_ a: RuntimeInstall, _ b: RuntimeInstall) -> Bool {
         if a.isUsable != b.isUsable { return a.isUsable }
-        if a.isPreview != b.isPreview { return a.isPreview }
+        if a.isManual != b.isManual { return a.isManual }
         if a.name != b.name { return a.name < b.name }
         return a.id < b.id
     }
 
-    static func inspect(bundle: URL, isManual: Bool = false) -> CrossOverInstall {
-        if let id = WineRuntime.id(atRoot: bundle) {
-            guard let build = WineRuntime.build(atRoot: bundle) else {
-                return CrossOverInstall(
-                    bundle: bundle, releaseVersion: id, support: .unsupportedBuild(id),
-                    isManual: isManual, isRuntime: true
-                )
-            }
-            return CrossOverInstall(
-                bundle: bundle, releaseVersion: build.releaseVersion, support: .supported(build),
-                isManual: isManual, isRuntime: true
-            )
+    static func inspect(root: URL, isManual: Bool = false) -> RuntimeInstall {
+        let id = runtimeID(atRoot: root) ?? root.lastPathComponent
+        guard let build = SupportedRunners.build(id: id) else {
+            return RuntimeInstall(root: root, support: .unsupportedBuild(id), isManual: isManual)
         }
-        guard let version = releaseVersion(of: bundle) else {
-            return CrossOverInstall(bundle: bundle, releaseVersion: nil, support: .unreadable, isManual: isManual)
-        }
-        guard let hash = Digest.sha256IfPresent(unixLoader(inBundle: bundle)) else {
-            return CrossOverInstall(
-                bundle: bundle, releaseVersion: version, support: .unreadable, isManual: isManual
-            )
-        }
-
-        guard let build = SupportedRunners.build(loaderSHA256: hash) else {
-            return CrossOverInstall(
-                bundle: bundle, releaseVersion: version,
-                support: .unsupportedBuild(version), isManual: isManual
-            )
-        }
-
-        return CrossOverInstall(
-            bundle: bundle, releaseVersion: version, support: .supported(build), isManual: isManual
-        )
-    }
-
-    // CrossOver puts the build date here and the version number in
-    // CFBundleVersion, so this is the string its download page shows.
-    static func releaseVersion(of bundle: URL) -> String? {
-        let plist = bundle.appending(path: "Contents/Info.plist")
-        guard let data = try? Data(contentsOf: plist),
-              let object = try? PropertyListSerialization.propertyList(from: data, format: nil),
-              let dict = object as? [String: Any]
-        else { return nil }
-        return dict["CFBundleShortVersionString"] as? String
-    }
-
-    static func unixLoader(inBundle bundle: URL) -> URL {
-        unixLoader(inRoot: SupportPaths.crossOverRoot(inBundle: bundle))
+        return RuntimeInstall(root: root, support: .supported(build), isManual: isManual)
     }
 
     static func unixLoader(inRoot root: URL) -> URL {
         root.appending(path: "lib/wine/x86_64-unix/wine")
-    }
-
-    static func verifyPatchInputs(root: URL, build: RunnerBuild) throws {
-        for arch in WineArch.allCases {
-            guard let expected = build.cleanNtdll[arch] else { continue }
-            let ntdll = NtdllPatcher.cleanSource(inRoot: root, arch: arch)
-            guard let actual = Digest.sha256IfPresent(ntdll) else {
-                throw StepFailure(
-                    step: String(localized: "Verify CrossOver"),
-                    detail: String(localized: "\(arch.rawValue)/ntdll.dll is missing from \(root.path(percentEncoded: false)).")
-                )
-            }
-            guard actual == expected else {
-                throw StepFailure(
-                    step: String(localized: "Verify CrossOver"),
-                    detail: String(localized: "\(arch.rawValue)/\(ntdll.lastPathComponent) is not the build \(build.bundleVersion) copy. Expected \(expected.prefix(16)), found \(actual.prefix(16)).")
-                )
-            }
-        }
     }
 }

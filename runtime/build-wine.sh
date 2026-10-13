@@ -1,13 +1,12 @@
 #!/bin/sh
-# Build a complete x86_64 (Rosetta) Wine runtime from source, so NotProton can run
-# without CrossOver.
+# Build the complete x86_64 (Rosetta) Wine runtime Hadron runs games with.
 #
 #   ./build-wine.sh     configure, build and stage into out/runtime/wine-<version>
 #
 # Uses the same pinned source tree as bridge/setup-wine-tree.sh, which has to run
 # first: it registers lsteamclient and steam.exe with configure. The patches in
-# runtime/patches are applied on top. The loader patch does in source what
-# ntdll-patch does to CrossOver's binary, so this runtime needs no NtdllPatcher step.
+# runtime/patches are applied on top: they redirect steamclient to lsteamclient in the
+# loader, name the profile steamuser, and let a DLL overlay stand in for builtins.
 #
 # Third party libraries are x86_64 builds under DEPS, never the arm64 Homebrew ones.
 # PKG_CONFIG_LIBDIR is pinned to DEPS so configure cannot pick up the wrong arch.
@@ -133,7 +132,7 @@ echo "==> staging into $OUT"
 rm -rf "$OUT"
 # shellcheck disable=SC2086
 make -C "$WINE_BUILD" install-lib DESTDIR="$OUT" $skip
-# steam.exe goes into each prefix from the bridge, as with CrossOver, not in as a builtin.
+# steam.exe goes into each prefix from the bridge, not in as a builtin.
 rm -f "$OUT"/lib/wine/*-windows/steam.exe
 cp "$DEPS/lib/libfreetype.6.dylib" "$DEPS/lib/libMoltenVK.dylib" "$OUT/lib/"
 for arch in i386-windows x86_64-windows; do
@@ -141,7 +140,7 @@ for arch in i386-windows x86_64-windows; do
 done
 cp "$WINE_BUILD/dlls/lsteamclient/lsteamclient.so" "$OUT/lib/wine/x86_64-unix/"
 
-# compat_run.sh finds the loader where CrossOver keeps it.
+# compat_run.sh runs the loader from the unix dir, beside ntdll.so.
 [ -e "$OUT/lib/wine/x86_64-unix/wine" ] || cp "$OUT/bin/wine" "$OUT/lib/wine/x86_64-unix/wine"
 
 # Wine builds with -g, which is most of the size. The x86_64 unix halves stay unsigned.

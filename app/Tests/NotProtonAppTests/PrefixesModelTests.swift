@@ -90,7 +90,7 @@ struct PrefixesModelTests {
         let library = SteamLibrary(root: dir)
         for appID in appIDs {
             try FileManager.default.createDirectory(
-                at: library.compatdata.appending(path: "\(appID)/pfx/drive_c/users/crossover"),
+                at: library.compatdata.appending(path: "\(appID)/pfx/drive_c/users/steamuser"),
                 withIntermediateDirectories: true)
         }
         return (dir, library)
@@ -111,7 +111,7 @@ struct PrefixesModelTests {
         try "\(Self.tool.build)\n\(Self.tool.display)\n".write(
             to: compatdata.appending(path: "1574480/\(PrefixTools.buildRecordName)"),
             atomically: true, encoding: .utf8)
-        try "1.0.0.1\n".write(
+        try "wine-0.1\n".write(
             to: compatdata.appending(path: "253750/\(PrefixTools.buildRecordName)"),
             atomically: true, encoding: .utf8)
 
@@ -128,20 +128,23 @@ struct PrefixesModelTests {
         #expect(model.lastTool(try prefix("447700")) == nil)
     }
 
-    @Test("The Prefixes table shows the short name of the tool that runs each prefix")
+    @Test("The Prefixes table shows the current name of the tool that runs each prefix")
     func showsShortToolName() async throws {
         let (dir, library) = try makeLibrary(appIDs: ["1574480", "253750"])
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let build = try #require(SupportedRunners.all.first { $0.tools.count == 2 })
-        let tools = build.tools.map { InstalledTool(tool: $0, build: build.id) }
+        // The shipped tool, and an arm64 one of the same build, so each prefix's arch decides.
+        let build = shippedRuntime
+        let fex = CompatTool(name: "notproton-wine-fex", flavor: .fex, display: "Hadron Wine 11.15 (FEX)")
+        let tools = (build.tools + [fex]).map { InstalledTool(tool: $0, build: build.id) }
         let named = [
-            ("1574480", "CrossOver Preview - ARM64 Build (FEX)", UInt16(0xAA64)),
-            ("253750", "CrossOver Preview - ARM64 Build (Rosetta)", UInt16(0x8664)),
+            ("1574480", "An older name (FEX)", UInt16(0xAA64)),
+            ("253750", "An older name (Rosetta)", UInt16(0x8664)),
         ]
         for (appID, old, machine) in named {
             let root = library.compatdata.appending(path: appID)
             try write("\(build.id)\n\(old)\n", to: root.appending(path: PrefixTools.buildRecordName))
+            // The prefix's own ntdll.dll, which carries its arch.
             var bytes = [UInt8](repeating: 0, count: 0x40)
             bytes[0x3c] = 0x40
             bytes += [0x50, 0x45, 0x00, 0x00, UInt8(machine & 0xff), UInt8(machine >> 8)]
@@ -156,8 +159,8 @@ struct PrefixesModelTests {
         func shown(_ appID: String) throws -> String? {
             model.lastTool(try #require(model.prefixes.first { $0.appID == appID }))
         }
-        #expect(try shown("1574480") == "CrossOver 2026 08 21-ARM64 - FEX")
-        #expect(try shown("253750") == "CrossOver 2026 08 21-ARM64 - Rosetta")
+        #expect(try shown("1574480") == fex.display)
+        #expect(try shown("253750") == build.tools[0].display)
     }
 
     @Test("A load lists the prefixes and measures each one")

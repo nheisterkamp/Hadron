@@ -191,7 +191,7 @@ struct FailureRemedyTests {
         let status = SystemStatus()
         status.setFailure(WriteRefused(path: try bundle().path(percentEncoded: false)))
 
-        status.setFailure("No supported copy of CrossOver found.")
+        status.setFailure("No Hadron Wine runtime found.")
 
         #expect(
             status.failureRemedy == nil,
@@ -322,143 +322,59 @@ struct FailureReportTests {
     }
 }
 
-// A user who activates CrossOver after a refresh, then presses the button that was turned
-// down, gets the same refusal from a verdict that is no longer true.
+// A Wine runtime needs no activation, so both buttons go straight to work.
 @MainActor
-@Suite("License freshness")
-struct LicenseFreshnessTests {
+@Suite("Setting up without a runtime")
+struct NoRuntimeTests {
 
-    private func scratch() -> URL {
-        let dir = URL(filePath: NSTemporaryDirectory())
-            .appending(path: "np-license-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    // A bundle with no tie.pub in it, which the check turns down without reading any
-    // license file, so the verdict does not depend on what this machine is activated for.
-    private func snapshot(
-        install: CrossOverInstall?, license: CrossOverLicense.Status?, bridge: URL
-    ) -> StatusSnapshot {
-        StatusSnapshot(
-            steam: .steamMissing,
-            steamRunning: false,
-            updateBlocked: false,
-            crossOver: install.map { [$0] } ?? [],
-            crossOverLicense: install.flatMap { i in license.map { [i.id: $0] } } ?? [:],
-            runner: .none,
-            payload: PayloadInspector.inspect(bridge: bridge)
-        )
-    }
-
-    @Test("A stale verdict is not what the next action reads")
-    func staleVerdictIsReplaced() async throws {
-        let root = scratch()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let install = CrossOverInstall(
-            bundle: root.appending(path: "CrossOver.app"),
-            releaseVersion: "20260821",
-            support: .supported(SupportedRunners.all[0])
-        )
+    private func status(runtimes: [RuntimeInstall]) -> SystemStatus {
         let status = SystemStatus()
-        status.snapshot = snapshot(
-            install: install,
-            license: CrossOverLicense.Status(
-                licensed: true, detail: "CrossOver is activated.",
-                diagnostic: "valid license in nowhere"
-            ),
-            bridge: root
+        status.snapshot = StatusSnapshot(
+            steam: .steamMissing, steamRunning: false, updateBlocked: false,
+            runtimes: runtimes, runner: .none,
+            payload: PayloadInspector.inspect(bridge: FileManager.default.temporaryDirectory)
         )
-
-        let fresh = try #require(await status.checkLicense())
-
-        #expect(!fresh.licensed, "the cached verdict was handed back instead of a new one")
-        #expect(
-            status.snapshot?.crossOverLicense[install.id]?.licensed == false,
-            "the dialog would still report the verdict the check replaced"
-        )
+        return status
     }
 
-    // The gates read == false, so an install that cannot be checked at all has to stay nil
-    // rather than come back as a refusal and block the button.
-    @Test("No usable install leaves nothing to check")
-    func nothingToCheck() async {
-        let root = scratch()
-        defer { try? FileManager.default.removeItem(at: root) }
+    @Test("Setting up the tool with no runtime found says so, without asking anything first")
+    func noRuntimeFound() async {
+        let status = status(runtimes: [])
 
-        let status = SystemStatus()
-        status.snapshot = snapshot(
-            install: CrossOverInstall(
-                bundle: root.appending(path: "CrossOver.app"),
-                releaseVersion: nil,
-                support: .unreadable
-            ),
-            license: nil,
-            bridge: root
-        )
+        await status.requestCompatibilityTool()
 
-        #expect(await status.checkLicense() == nil)
-    }
-}
-
-// Four entry points share one answer here. The menu items used to skip it: Install dropped
-// the tool without saying so, and Set Up hit the refusal inside RunnerSetup as a failed step.
-@Suite("Activation questions")
-struct ActivationQuestionTests {
-
-    @Test("An install that would build a tool asks before going ahead unactivated")
-    func unactivatedInstallAsks() {
-        #expect(
-            SystemStatus.activationQuestion(.install, licensed: false, runner: .none)
-                == .installUnlicensed
-        )
+        #expect(status.failure == "No Hadron Wine runtime found.")
+        #expect(status.pendingConfirmation == nil)
+        #expect(status.outcome == nil)
+        #expect(!status.isBusy)
     }
 
-    // The dialog warns that the tool cannot be installed. With one already set up none
-    // would have been built, so the warning described something that could not happen.
-    @Test("An install asks nothing when the tool it would skip is already set up")
-    func installWithToolAsksNothing() {
-        #expect(
-            SystemStatus.activationQuestion(
-                .install, licensed: false, runner: .ready(builds: ["27.0.0.40921"])
-            ) == nil
-        )
+    @Test("An unsupported runtime is not something to set up from")
+    func onlyUnsupportedRuntime() async {
+        let old = RuntimeInstall(
+            root: URL(filePath: "/runtimes/old", directoryHint: .isDirectory), support: .unsupportedBuild("wine-0.1"))
+        let status = status(runtimes: [old])
+
+        await status.requestCompatibilityTool()
+
+        #expect(status.failure == "No Hadron Wine runtime found.")
+        #expect(status.pendingConfirmation == nil)
     }
 
-    @Test("An activated install goes straight ahead")
-    func activatedInstallProceeds() {
-        #expect(SystemStatus.activationQuestion(.install, licensed: true, runner: .none) == nil)
-    }
+    @Test("Rows come from the snapshot's runtimes and copies, incomplete copies included")
+    func rowsFollowSnapshot() {
+        let runtime = RuntimeInstall(
+            root: URL(filePath: "/runtimes/wine", directoryHint: .isDirectory), support: .supported(shippedRuntime))
+        let status = status(runtimes: [runtime])
+        #expect(status.runtimeRows.map(\.copy) == [.none])
 
-    // Unlike an install there is no reduced version to go ahead with, so this one asks
-    // whatever is already set up.
-    @Test("Setting up the tool asks whenever CrossOver is unactivated")
-    func unactivatedToolAsks() {
-        for runner in [RunnerState.none, .ready(builds: ["27.0.0.40921"])] {
-            #expect(
-                SystemStatus.activationQuestion(.compatibilityTool, licensed: false, runner: runner)
-                    == .toolUnlicensed
-            )
-        }
-    }
+        status.snapshot?.installedRunners = [shippedRuntime]
+        status.snapshot?.orphanedRunners = ["wine-0.1"]
+        status.snapshot?.runner = .incomplete(builds: [shippedRuntimeID], problems: ["missing"])
+        #expect(status.runtimeRows.map(\.copy) == [.incomplete, .unsupported])
 
-    @Test("Setting up the tool goes straight ahead when CrossOver is activated")
-    func activatedToolProceeds() {
-        #expect(
-            SystemStatus.activationQuestion(.compatibilityTool, licensed: true, runner: .none)
-                == nil
-        )
-    }
-
-    // A check that could not run is not a refusal. Reading it as one would turn away every
-    // user whose CrossOver the app cannot inspect.
-    @Test("An install that could not be checked is not treated as a refusal")
-    func uncheckedProceeds() {
-        #expect(SystemStatus.activationQuestion(.install, licensed: nil, runner: .none) == nil)
-        #expect(
-            SystemStatus.activationQuestion(.compatibilityTool, licensed: nil, runner: .none) == nil
-        )
+        status.snapshot = nil
+        #expect(status.runtimeRows.isEmpty)
     }
 }
 
@@ -582,7 +498,7 @@ struct SteamChoiceTests {
     func refusesOtherApps() throws {
         let root = try scratchDirectory("steam-choice")
         defer { try? FileManager.default.removeItem(at: root) }
-        let picked = try bundle("CrossOver.app", identifier: "com.codeweavers.CrossOver", in: root)
+        let picked = try bundle("Wine.app", identifier: "org.winehq.Wine", in: root)
 
         #expect(SystemStatus.steamChoiceRefusal(picked, current: SupportPaths.Steam.defaultApp, insert: nil) != nil)
     }

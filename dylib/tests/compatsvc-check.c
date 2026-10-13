@@ -346,7 +346,7 @@ static uint8_t response_buf[64];
 static void offered_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
@@ -356,7 +356,7 @@ static void offered_cases(void) {
     reply_t r;
     decode_reply(&r);
     check(r.count == 1, "one tool that converts from windows is offered");
-    check(strcmp(r.tools[0].name, "crossover") == 0, "the offered tool is the one that converts from windows");
+    check(strcmp(r.tools[0].name, "notproton-wine") == 0, "the offered tool is the one that converts from windows");
 
     // A tool that converts from linux is not offered to a windows-only app.
     reset();
@@ -374,7 +374,7 @@ static void offered_cases(void) {
 static void hidden_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, COMPAT_TOOL_GATE_HIDDEN, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, COMPAT_TOOL_GATE_HIDDEN, 0 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
@@ -397,7 +397,7 @@ static void hidden_cases(void) {
 static void is_a_tool_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 730 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 730 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
@@ -415,7 +415,7 @@ static void is_a_tool_cases(void) {
 static void none_entry_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
@@ -436,7 +436,7 @@ static void none_entry_cases(void) {
     check(!has_none, "the none entry is absent when neither fallback nor mapping names it");
 
     // A wildcard mapping creates a fallback, so the none entry appears.
-    stub_wildcard_val = "crossover";
+    stub_wildcard_val = "notproton-wine";
     rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
     decode_reply(&r);
     has_none = 0;
@@ -455,7 +455,7 @@ static void none_entry_cases(void) {
     check(has_none, "the none entry appears when the app already holds it");
 
     // The none entry never appears for the global scope (appid 0).
-    stub_wildcard_val = "crossover";
+    stub_wildcard_val = "notproton-wine";
     rc = get_compat_tools(build_request(0, 0), (uintptr_t)response_buf);
     decode_reply(&r);
     has_none = 0;
@@ -495,49 +495,49 @@ static void priority_cases(void) {
 static void selected_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
 
     // A per-app query with a mapping reports the mapping as the selection.
-    stub_app_mapping_val = "crossover";
-    stub_tool_for_app_name = "crossover";
+    stub_app_mapping_val = "notproton-wine";
+    stub_tool_for_app_name = "notproton-wine";
     int rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
     (void)rc;
     reply_t r;
     decode_reply(&r);
-    check(strcmp(r.selected, "crossover") == 0, "a mapped app reports its mapping as the selection");
+    check(strcmp(r.selected, "notproton-wine") == 0, "a mapped app reports its mapping as the selection");
 
     // No mapping reports the empty string, which is the "no choice" state.
     stub_app_mapping_val = NULL;
-    stub_tool_for_app_name = "crossover";
+    stub_tool_for_app_name = "notproton-wine";
     rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
     decode_reply(&r);
     check(strcmp(r.selected, "") == 0, "an unmapped app reports the empty string as the selection");
 
     // The global query reads the chosen tool rather than the mapping.
-    stub_chosen_tool_name = "crossover";
+    stub_chosen_tool_name = "notproton-wine";
     rc = get_compat_tools(build_request(0, 0), (uintptr_t)response_buf);
     decode_reply(&r);
-    check(strcmp(r.selected, "crossover") == 0, "the global setting reports the chosen tool");
+    check(strcmp(r.selected, "notproton-wine") == 0, "the global setting reports the chosen tool");
 }
 
 static void fallback_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
 
     // The wildcard names a fallback directly.
-    stub_wildcard_val = "crossover";
+    stub_wildcard_val = "notproton-wine";
     int rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
     (void)rc;
     reply_t r;
     decode_reply(&r);
-    check(strcmp(r.fallback, "crossover") == 0, "the wildcard mapping names the fallback");
+    check(strcmp(r.fallback, "notproton-wine") == 0, "the wildcard mapping names the fallback");
 
     // No wildcard, but would_force + registered tool fills it in.
     stub_wildcard_val = NULL;
@@ -545,7 +545,7 @@ static void fallback_cases(void) {
     stub_registered_tool_val = fake_entries;
     rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
     decode_reply(&r);
-    check(strcmp(r.fallback, "crossover") == 0,
+    check(strcmp(r.fallback, "notproton-wine") == 0,
           "a forced app with no wildcard falls back to the registered tool");
 
     // Global (appid 0) with no wildcard still falls back to the registered tool.
@@ -554,7 +554,7 @@ static void fallback_cases(void) {
     stub_registered_tool_val = fake_entries;
     rc = get_compat_tools(build_request(0, 0), (uintptr_t)response_buf);
     decode_reply(&r);
-    check(strcmp(r.fallback, "crossover") == 0,
+    check(strcmp(r.fallback, "notproton-wine") == 0,
           "the global setting with no wildcard falls back to the registered tool");
 
     // An app that would not be forced and has no wildcard gets no fallback.
@@ -569,23 +569,23 @@ static void fallback_cases(void) {
 static void active_flag_cases(void) {
     reset();
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
         { "proton",    "Proton",    COMPAT_PLATFORM_WINDOWS, 200, 0, 0 },
     };
     build_tools(tools, 2);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;
-    stub_tool_for_app_name = "crossover";
+    stub_tool_for_app_name = "notproton-wine";
 
     int rc = get_compat_tools(build_request(REQ_HAS_APPID, 7), (uintptr_t)response_buf);
     (void)rc;
     reply_t r;
     decode_reply(&r);
-    int cx_active = -1, pt_active = -1;
+    int wine_active = -1, pt_active = -1;
     for (int i = 0; i < r.count; i++) {
-        if (strcmp(r.tools[i].name, "crossover") == 0) cx_active = r.tools[i].is_active;
+        if (strcmp(r.tools[i].name, "notproton-wine") == 0) wine_active = r.tools[i].is_active;
         if (strcmp(r.tools[i].name, "proton") == 0)    pt_active = r.tools[i].is_active;
     }
-    check(cx_active == 1, "the tool the app runs under is flagged active");
+    check(wine_active == 1, "the tool the app runs under is flagged active");
     check(pt_active == 0, "a tool the app does not run under is not active");
 }
 
@@ -596,17 +596,17 @@ static void specify_cases(void) {
     last_map_appid = 0;
     last_map_tool = NULL;
     int rc = specify_compat_tool(
-        build_specify_request(SPECIFY_HAS_APPID, 42, "crossover"),
+        build_specify_request(SPECIFY_HAS_APPID, 42, "notproton-wine"),
         (uintptr_t)response_buf);
     check(rc == RESULT_OK, "a specify with a tool name succeeds");
     check(last_map_appid == 42, "the appid from the request reaches the mapping");
-    check(last_map_tool && strcmp(last_map_tool, "crossover") == 0,
+    check(last_map_tool && strcmp(last_map_tool, "notproton-wine") == 0,
           "the tool name from the request reaches the mapping");
 
     // A request with no appid has-bit maps as appid zero (the global).
     last_map_appid = 99;
     rc = specify_compat_tool(
-        build_specify_request(0, 42, "crossover"),
+        build_specify_request(0, 42, "notproton-wine"),
         (uintptr_t)response_buf);
     check(rc == RESULT_OK, "a specify with no appid has-bit succeeds");
     check(last_map_appid == 0, "a request with no appid has-bit reads as appid zero");
@@ -617,7 +617,7 @@ static void no_manager_cases(void) {
     reset();
     parse_into_ok = 0;
     tool_spec_t tools[] = {
-        { "crossover", "CrossOver", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
+        { "notproton-wine", "Hadron Wine 11.15", COMPAT_PLATFORM_WINDOWS, 100, 0, 0 },
     };
     build_tools(tools, 1);
     stub_platforms_val = COMPAT_PLATFORM_WINDOWS;

@@ -123,7 +123,6 @@ struct SteamInstallerTests {
             modifications: fixture.modifications,
             runnerIsRunning: { _ in running },
             verifyRunner: verifyRunner,
-            patchRunner: { _, _, _ in },
             stopClient: { _, onStopping in if stopped { onStopping() }; return stopped },
             register: { calls.register($0) },
             resetInputAccess: { calls.resetInputAccess() }
@@ -584,15 +583,13 @@ struct SteamInstallerTests {
         #expect(try install(fixture, stopped: true).stoppedClient)
     }
 
-    @Test("Install updates every deployed tool's script and runner bridge copy")
-    func updatesScriptsAndRunnerCopies() async throws {
+    @Test("Install updates every deployed tool's script")
+    func updatesScripts() async throws {
         let work = try scratchDirectory("install-scripts")
         defer { try? FileManager.default.removeItem(at: work) }
         let fixture = try await self.fixture(into: work)
         let runners = fixture.support.appending(path: "runners")
-        let build = SupportedRunners.all[0]
-        let runner = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
-        try FileManager.default.createDirectory(at: runner.appending(path: "lib/wine"), withIntermediateDirectories: true)
+        try makeInstalledRuntime(in: runners)
 
         _ = try install(fixture)
 
@@ -631,9 +628,7 @@ struct SteamInstallerTests {
         let work = try scratchDirectory("install-running")
         defer { try? FileManager.default.removeItem(at: work) }
         let fixture = try await self.fixture(into: work)
-        let runner = SupportPaths.clonedRoot(forBuild: SupportedRunners.all[0].id,
-                                            runners: fixture.support.appending(path: "runners"))
-        try FileManager.default.createDirectory(at: runner.appending(path: "lib/wine"), withIntermediateDirectories: true)
+        try makeInstalledRuntime(in: fixture.support.appending(path: "runners"))
 
         let error = try #require(throws: StepFailure.self) { try install(fixture, running: true) }
 
@@ -647,27 +642,34 @@ struct SteamInstallerTests {
         let work = try scratchDirectory("install-orphan")
         defer { try? FileManager.default.removeItem(at: work) }
         let fixture = try await self.fixture(into: work)
-        let runner = SupportPaths.clonedRoot(forBuild: "99.0.0.12345", runners: fixture.support.appending(path: "runners"))
-        try FileManager.default.createDirectory(at: runner.appending(path: "lib/wine"), withIntermediateDirectories: true)
+        try makeInstalledRuntime(in: fixture.support.appending(path: "runners"), id: "wine-0.1")
         let error = try #require(throws: StepFailure.self) { try install(fixture, running: true) }
-        #expect(error.detail.contains("99.0.0.12345"))
+        #expect(error.detail.contains("wine-0.1"))
         #expect(!FileManager.default.fileExists(atPath: fixture.deployedDylib.path))
     }
 
-    @Test("A recognized runner folder with invalid binaries is refused before deployment")
+    @Test("A recognized runner folder that is not a valid runtime is refused before deployment")
     func validatesExistingRunner() async throws {
         let work = try scratchDirectory("install-runner-validation")
         defer { try? FileManager.default.removeItem(at: work) }
         let fixture = try await self.fixture(into: work)
         let runners = fixture.support.appending(path: "runners")
-        let build = SupportedRunners.all[0]
-        let runner = SupportPaths.clonedRoot(forBuild: build.id, runners: runners)
+        let runner = SupportPaths.runnerRoot(forBuild: shippedRuntimeID, runners: runners)
         try FileManager.default.createDirectory(at: runner.appending(path: "lib/wine/x86_64-unix"), withIntermediateDirectories: true)
         try Data("wrong loader".utf8).write(to: runner.appending(path: "lib/wine/x86_64-unix/wine"))
-        let error = try #require(throws: StepFailure.self) {
+
+        // No marker naming the build.
+        let unmarked = try #require(throws: StepFailure.self) {
             try install(fixture, verifyRunner: RunnerInstaller.verifyClone)
         }
-        #expect(error.detail.contains("does not match"))
+        #expect(unmarked.detail.contains("is not Wine runtime \(shippedRuntimeID)"))
+
+        // Marked, but the loader cannot run.
+        try Data("\(shippedRuntimeID)\n".utf8).write(to: runner.appending(path: RuntimeSource.markerName))
+        let noLoader = try #require(throws: StepFailure.self) {
+            try install(fixture, verifyRunner: RunnerInstaller.verifyClone)
+        }
+        #expect(noLoader.detail.contains("no Wine loader"))
         #expect(!FileManager.default.fileExists(atPath: fixture.bridge.path))
         #expect(!FileManager.default.fileExists(atPath: fixture.deployedDylib.path))
     }

@@ -16,7 +16,7 @@ bad() { printf '  FAIL  %s\n         want [%s]\n         got  [%s]\n' "$1" "$2" 
 is() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "$2" "$3"; fi; }
 
 echo "== WINEDLLPATH (first match wins, runner first) =="
-CX_ROOT=/R
+np_root=/R
 wine_unix=/R/lib/wine/x86_64-unix
 WINEDLLPATH=""
 eval "$dllpath_line"
@@ -36,31 +36,36 @@ WINEDLLOVERRIDES="lsteamclient=n"
 eval "$overrides_line"
 is "trio outranks user" "lsteamclient=n;steamclient=n;steamclient64=n;lsteamclient=b" "$WINEDLLOVERRIDES"
 
-echo "== Apple GPTK initialization and launcher environment =="
+echo "== graphics overlay and launcher environment =="
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-np_support="$work/Application Support/notproton"
-np_build="test"
-library="$np_support/runners/crossover-$np_build/CrossOver/lib64/apple_gptk/external/libd3dshared.dylib"
-init=$(sed -n '/^CX_ROOT=/,/^wine_unix=/p' "$SRC")
+np_root="$work/runtime"
+log=/dev/null
+graphics=$(sed -n '/^unset NOTPROTON_DLL_OVERLAY$/,/^echo "graphics:/p' "$SRC")
 # shellcheck disable=SC2016 # Match the literal launcher loop.
 forward=$(sed -n '/^for name in $(env /,/^done$/p' "$SRC")
-[ -n "$init" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }
-unset CX_APPLEGPTK_LIBD3DSHARED_PATH
-eval "$init"
-is "runner without the library leaves the path unset" "" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
-mkdir -p "$(dirname "$library")"
-: > "$library"
-eval "$init"
-is "bundled library is selected" "$library" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
-is "helpers inherit the library path" "$library" "$(sh -c 'printf %s "$CX_APPLEGPTK_LIBD3DSHARED_PATH"')"
+[ -n "$graphics" ] && [ -n "$forward" ] || { echo "FAIL: runner environment blocks not found"; exit 1; }
+unset NOTPROTON_GRAPHICS
+eval "$graphics"
+is "a runtime without DXMT leaves the overlay unset" "" "${NOTPROTON_DLL_OVERLAY:-}"
+mkdir -p "$np_root/lib/dxmt"
+eval "$graphics"
+is "DXMT is the default" "$np_root/lib/dxmt" "${NOTPROTON_DLL_OVERLAY:-}"
+is "helpers inherit the overlay" "$np_root/lib/dxmt" "$(sh -c 'printf %s "$NOTPROTON_DLL_OVERLAY"')"
+NOTPROTON_GRAPHICS=wined3d
+eval "$graphics"
+is "wined3d leaves Wine's own Direct3D" "" "${NOTPROTON_DLL_OVERLAY:-}"
+unset NOTPROTON_GRAPHICS
+DXMT_CONFIG="d3d11.metalSpatialUpscaleFactor=2.0"
+UNRELATED_SETTING=1
+export DXMT_CONFIG UNRELATED_SETTING
 set --
 eval "$forward"
 forwarded=""
 for arg in "$@"; do
-  case "$arg" in CX_APPLEGPTK_LIBD3DSHARED_PATH=*) forwarded=${arg#*=} ;; esac
+  case "$arg" in DXMT_CONFIG=*) forwarded=${arg#*=} ;; UNRELATED_SETTING=*) forwarded=unrelated ;; esac
 done
-is "game launcher receives the path as one argument" "$library" "$forwarded"
+is "the game launcher receives DXMT settings as one argument" "d3d11.metalSpatialUpscaleFactor=2.0" "$forwarded"
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> envcheck: all assertions hold"

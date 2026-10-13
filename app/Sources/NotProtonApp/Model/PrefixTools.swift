@@ -67,7 +67,7 @@ enum PrefixTools {
               let updated = Int(field)
         else { return nil }
         for build in RunnerStore.clonedBuilds(in: runners) {
-            let inf = SupportPaths.clonedRoot(forBuild: build, runners: runners)
+            let inf = SupportPaths.runnerRoot(forBuild: build, runners: runners)
                 .appending(path: "share/wine/wine.inf")
             let modified = (try? FileManager.default.attributesOfItem(
                 atPath: inf.path(percentEncoded: false))[.modificationDate]) as? Date
@@ -75,7 +75,7 @@ enum PrefixTools {
                 return PrefixBuildRecord(build: build, display: nil)
             }
         }
-        return PrefixBuildRecord(build: "", display: String(localized: "another version of CrossOver"))
+        return PrefixBuildRecord(build: "", display: String(localized: "an earlier Wine runtime"))
     }
 
     static func writeBuildRecord(_ tool: InstalledTool, for prefix: WinePrefix) throws {
@@ -114,32 +114,22 @@ enum PrefixTools {
         throw StepFailure(step: step, detail: String(localized: "No compatibility tool is set up."))
     }
 
-    static func syncBackend(prefix: WinePrefix) -> String {
-        let marker = prefix.root.appending(path: "notproton-msync")
-        let recorded = try? String(contentsOf: marker, encoding: .utf8)
-        return recorded?.trimmingCharacters(in: .whitespacesAndNewlines) == "1" ? "1" : "0"
-    }
-
     static func environment(
-        prefix: WinePrefix, runner: URL, flavor: CompatTool.Flavor = .fex
+        prefix: WinePrefix, runner: URL, flavor: CompatTool.Flavor = .rosetta
     ) -> [String: String] {
         let root = runner.path(percentEncoded: false)
         var environment = ProcessInfo.processInfo.environment
-        environment["CX_ROOT"] = root
-        environment["CX_HOME"] = SupportPaths.applicationSupport
-            .appending(path: "CrossOver").path(percentEncoded: false)
         let wine = layout(runner: runner, flavor: flavor)
         environment["WINELOADER"] = wine.loader.path(percentEncoded: false)
         environment["WINESERVER"] = wine.server.path(percentEncoded: false)
         environment["WINEDLLPATH"] = "\(root)/lib/wine/x86_64-windows:"
             + wine.unixDir.path(percentEncoded: false)
         environment["WINEPREFIX"] = prefix.pfx.path(percentEncoded: false)
-        environment["WINEMSYNC"] = syncBackend(prefix: prefix)
         environment["PATH"] = "\(root)/bin:" + (environment["PATH"] ?? "/usr/bin:/bin")
         return environment
     }
 
-    static func loader(runner: URL, flavor: CompatTool.Flavor = .fex) -> URL {
+    static func loader(runner: URL, flavor: CompatTool.Flavor = .rosetta) -> URL {
         layout(runner: runner, flavor: flavor).loader
     }
 
@@ -149,25 +139,12 @@ enum PrefixTools {
         let unixDir: URL
     }
 
-    static func layout(runner: URL, flavor: CompatTool.Flavor = .fex) -> WineLayout {
-        let fm = FileManager.default
-        let bin = runner.appending(path: "bin")
-        func executable(_ url: URL) -> Bool {
-            fm.isExecutableFile(atPath: url.path(percentEncoded: false))
-        }
-
-        let arm = runner.appending(path: "lib/wine/aarch64-unix")
-        let armLoader = arm.appending(path: "wine.app/Contents/MacOS/wine")
-        let armServer = bin.appending(path: "wineserver-arm64")
-        if flavor == .fex, executable(armLoader), executable(armServer) {
-            return WineLayout(loader: armLoader, server: armServer, unixDir: arm)
-        }
-
-        let unix = runner.appending(path: "lib/wine/x86_64-unix")
-        let server = bin.appending(path: "wineserver")
+    // The layout runtime/build-wine.sh stages, and the one compat_run.sh runs.
+    static func layout(runner: URL, flavor: CompatTool.Flavor = .rosetta) -> WineLayout {
+        let unix = runner.appending(path: "lib/wine/\(flavor.unixDir)")
         return WineLayout(
             loader: unix.appending(path: "wine"),
-            server: executable(server) ? server : bin.appending(path: "wineserver-x86"),
+            server: runner.appending(path: "bin/wineserver"),
             unixDir: unix
         )
     }
@@ -194,13 +171,13 @@ enum PrefixTools {
     static func launch(_ tool: WineTool, in prefix: WinePrefix) throws {
         let chosen = try resolvedTool(step: String(localized: "Open \(tool.label)"), for: prefix)
         try launch(
-            tool, in: prefix, runner: SupportPaths.clonedRoot(forBuild: chosen.build),
+            tool, in: prefix, runner: SupportPaths.runnerRoot(forBuild: chosen.build),
             flavor: chosen.tool.flavor
         )
     }
 
     static func launch(
-        _ tool: WineTool, in prefix: WinePrefix, runner: URL, flavor: CompatTool.Flavor = .fex
+        _ tool: WineTool, in prefix: WinePrefix, runner: URL, flavor: CompatTool.Flavor = .rosetta
     ) throws {
         let loader = try readyLoader(
             step: String(localized: "Open \(tool.label)"), prefix: prefix, runner: runner, flavor: flavor
@@ -215,7 +192,7 @@ enum PrefixTools {
     static func run(_ executable: URL, in prefix: WinePrefix) throws {
         let chosen = try resolvedTool(step: String(localized: "Run \(executable.lastPathComponent)"), for: prefix)
         try run(
-            executable, in: prefix, runner: SupportPaths.clonedRoot(forBuild: chosen.build),
+            executable, in: prefix, runner: SupportPaths.runnerRoot(forBuild: chosen.build),
             flavor: chosen.tool.flavor
         )
     }
@@ -224,7 +201,7 @@ enum PrefixTools {
         _ executable: URL,
         in prefix: WinePrefix,
         runner: URL,
-        flavor: CompatTool.Flavor = .fex
+        flavor: CompatTool.Flavor = .rosetta
     ) throws {
         let step = String(localized: "Run \(executable.lastPathComponent)")
         let loader = try readyLoader(step: step, prefix: prefix, runner: runner, flavor: flavor)
@@ -268,13 +245,13 @@ enum PrefixTools {
         )
         return try winetricks(
             verbs, in: prefix, script: script,
-            runner: SupportPaths.clonedRoot(forBuild: chosen.build), flavor: chosen.tool.flavor
+            runner: SupportPaths.runnerRoot(forBuild: chosen.build), flavor: chosen.tool.flavor
         )
     }
 
     static func winetricks(
         _ verbs: [String], in prefix: WinePrefix, script: URL, runner: URL,
-        flavor: CompatTool.Flavor = .fex
+        flavor: CompatTool.Flavor = .rosetta
     ) throws -> URL {
         let step = String(localized: "Run Winetricks")
         guard !verbs.isEmpty else {

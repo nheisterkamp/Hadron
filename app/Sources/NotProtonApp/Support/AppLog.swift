@@ -32,15 +32,14 @@ enum AppLog {
             "state installContent=\(snapshot.installContent)",
         ]
 
-        if snapshot.crossOver.isEmpty {
-            lines.append("state crossOver=none found")
+        if snapshot.runtimes.isEmpty {
+            lines.append("state runtime=none found")
         }
-        for install in snapshot.crossOver {
+        for install in snapshot.runtimes {
             lines.append(
-                "state crossOver \(install.name) version=\(install.releaseVersion ?? "unreadable") "
-                    + "support=\(describe(install.support))"
+                "state runtime \(install.name) support=\(describe(install.support))"
                     + (install.isManual ? " chosen" : "")
-                    + " at=\(install.bundle.path(percentEncoded: false))"
+                    + " at=\(install.root.path(percentEncoded: false))"
             )
         }
 
@@ -77,16 +76,15 @@ enum AppLog {
         switch runner {
         case .none: "not set up"
         case .ready(let builds): "ready \(builds.joined(separator: ", "))"
-        case .unpatched(_, let problems):
-            "unpatched: \(problems.joined(separator: ", "))"
+        case .incomplete(_, let problems):
+            "incomplete: \(problems.joined(separator: ", "))"
         }
     }
 
-    private static func describe(_ support: CrossOverSupport) -> String {
+    private static func describe(_ support: RuntimeSupport) -> String {
         switch support {
         case .supported(let build): "supported \(build.id)"
         case .unsupportedBuild(let version): "unsupported build \(version)"
-        case .unreadable: "unreadable"
         }
     }
 

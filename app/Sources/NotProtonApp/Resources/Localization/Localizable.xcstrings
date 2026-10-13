@@ -1,16 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    " Hadron can be deployed, but the CrossOver compatibility tool cannot be installed without a valid license." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " 可以部署 Hadron，但没有有效许可证时无法安装 CrossOver 兼容工具。"
-          }
-        }
-      }
-    },
     " with %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -27,26 +17,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 和 %@ 均来自 %@，但指定了不同的哈希值。"
-          }
-        }
-      }
-    },
-    "%@ at %@ spans %lld bytes, past the end of a %lld byte file." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ 处的%1$@占用 %3$lld 字节，超出了文件的 %4$lld 字节长度。"
-          }
-        }
-      }
-    },
-    "%@ carries no entitlements to extend." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 不包含可扩展的授权项。"
           }
         }
       }
@@ -151,16 +121,6 @@
         }
       }
     },
-    "%@ has a broken signature" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 的签名损坏"
-          }
-        }
-      }
-    },
     "%@ has no prefix at %@." : {
       "localizations" : {
         "zh-Hans" : {
@@ -191,22 +151,22 @@
         }
       }
     },
-    "%@ is missing the dyld entitlement" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 缺少 dyld 授权项"
-          }
-        }
-      }
-    },
     "%@ is not Steam." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 不是 Steam。"
+          }
+        }
+      }
+    },
+    "%@ is not a Hadron Wine runtime." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 不是 Hadron Wine 运行时。"
           }
         }
       }
@@ -227,16 +187,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支持构建版本 %@。支持的版本：%@。"
-          }
-        }
-      }
-    },
-    "%@ is not a valid copy of CrossOver or a Wine runtime." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 不是有效的 CrossOver 应用或 Wine 运行时。"
           }
         }
       }
@@ -311,16 +261,6 @@
         }
       }
     },
-    "%@ was re-signed without the dyld entitlement." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 重新签名后缺少 dyld 授权项。"
-          }
-        }
-      }
-    },
     "%@, %@" : {
       "localizations" : {
         "en" : {
@@ -352,102 +292,12 @@
         }
       }
     },
-    "%@.bin could not be read. %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法读取 %@.bin。%@"
-          }
-        }
-      }
-    },
-    "%@.bin hashes %@ and should hash %@, so the shipped detour is not the one that was built." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@.bin 的哈希值为 %@，预期为 %@；附带的跳转补丁与构建结果不一致。"
-          }
-        }
-      }
-    },
-    "%@.bin is missing from the app's resources." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用资源中缺少 %@.bin。"
-          }
-        }
-      }
-    },
     "%@/%@ is missing" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "缺少 %@/%@"
-          }
-        }
-      }
-    },
-    "%@/%@ is not in the bridge. Install Hadron first." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桥接组件中没有 %@/%@。请先安装 Hadron。"
-          }
-        }
-      }
-    },
-    "%@/%@ is not the build %@ copy. Expected %@, found %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@/%@ 不属于构建版本 %@。预期为 %@，实际为 %@。"
-          }
-        }
-      }
-    },
-    "%@/%@ is out of date" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@/%@ 已过期"
-          }
-        }
-      }
-    },
-    "%@/ntdll.dll is missing" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少 %@/ntdll.dll"
-          }
-        }
-      }
-    },
-    "%@/ntdll.dll is missing from %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ 中缺少 %1$@/ntdll.dll。"
-          }
-        }
-      }
-    },
-    "%@/ntdll.dll is not the patched copy" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@/ntdll.dll 不是已修补的副本"
           }
         }
       }
@@ -472,12 +322,12 @@
         }
       }
     },
-    ", not patched" : {
+    ", incomplete" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "，尚未修补"
+            "value" : "，不完整"
           }
         }
       }
@@ -488,16 +338,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "，尚未设置"
-          }
-        }
-      }
-    },
-    ", not set up or activated" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "，尚未设置或激活"
           }
         }
       }
@@ -562,36 +402,6 @@
         }
       }
     },
-    "A header field" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "头字段"
-          }
-        }
-      }
-    },
-    "A hook site of %lld bytes cannot hold a branch and link." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 字节的挂钩位置无法容纳分支链接指令。"
-          }
-        }
-      }
-    },
-    "A hook site of %lld bytes cannot hold a relative jump." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 字节的挂钩位置无法容纳相对跳转指令。"
-          }
-        }
-      }
-    },
     "A newer Hadron build is installed. Use that build to update or repair the installed files." : {
       "localizations" : {
         "zh-Hans" : {
@@ -632,22 +442,22 @@
         }
       }
     },
-    "Add CrossOver or Wine…" : {
+    "Add Wine Runtime…" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加 CrossOver 或 Wine…"
+            "value" : "添加 Wine 运行时…"
           }
         }
       }
     },
-    "Add a copy of CrossOver from another folder." : {
+    "Add a Hadron Wine runtime from another folder." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从其他文件夹添加 CrossOver 应用。"
+            "value" : "从其他文件夹添加 Hadron Wine 运行时。"
           }
         }
       }
@@ -992,16 +802,6 @@
         }
       }
     },
-    "Build %@ records no %@ ntdll hashes." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "构建版本 %@ 未记录 %@ ntdll 的哈希值。"
-          }
-        }
-      }
-    },
     "Calculating…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1122,32 +922,12 @@
         }
       }
     },
-    "Clone CrossOver" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制 CrossOver"
-          }
-        }
-      }
-    },
     "Close Steam before continuing." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先关闭 Steam，再继续。"
-          }
-        }
-      }
-    },
-    "Compatibility Tool" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "兼容工具"
           }
         }
       }
@@ -1282,6 +1062,16 @@
         }
       }
     },
+    "Copy the Wine runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 Wine 运行时"
+          }
+        }
+      }
+    },
     "Copy the built bridge files" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1302,12 +1092,12 @@
         }
       }
     },
-    "Copying CrossOver" : {
+    "Copying the Wine runtime" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在复制 CrossOver"
+            "value" : "正在复制 Wine 运行时"
           }
         }
       }
@@ -1358,49 +1148,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法写入文件。"
-          }
-        }
-      }
-    },
-    "CrossOver" : {
-      "shouldTranslate" : false
-    },
-    "CrossOver app not found." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到 CrossOver 应用。"
-          }
-        }
-      }
-    },
-    "CrossOver does not appear to be activated." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CrossOver 似乎尚未激活。"
-          }
-        }
-      }
-    },
-    "CrossOver is activated." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CrossOver 已激活。"
-          }
-        }
-      }
-    },
-    "CrossOver itself is not removed." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不会移除 CrossOver 原应用。"
           }
         }
       }
@@ -2018,12 +1765,12 @@
         }
       }
     },
-    "It will replace the DLLs used by CrossOver with ones that match your compatibility tool." : {
+    "It will replace the DLLs in the prefix with ones that match your compatibility tool." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "它会将 CrossOver 使用的 DLL 替换为与当前兼容工具匹配的版本。"
+            "value" : "它会将游戏容器中的 DLL 替换为与当前兼容工具匹配的版本。"
           }
         }
       }
@@ -2034,16 +1781,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "进程退出后输出通道仍未关闭，因此未能捕获输出。"
-          }
-        }
-      }
-    },
-    "Keeping the shipped %@ failed. " : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法保留随附的 %@。"
           }
         }
       }
@@ -2248,6 +1985,16 @@
         }
       }
     },
+    "No Hadron Wine runtime found." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 Hadron Wine 运行时。"
+          }
+        }
+      }
+    },
     "No Prefixes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2298,16 +2045,6 @@
         }
       }
     },
-    "No supported copy of CrossOver found." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到受支持的 CrossOver 应用。"
-          }
-        }
-      }
-    },
     "None" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2348,32 +2085,12 @@
         }
       }
     },
-    "OK" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "好"
-          }
-        }
-      }
-    },
     "Open %@" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开%@"
-          }
-        }
-      }
-    },
-    "Open CrossOver to activate it." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请打开 CrossOver 完成激活。"
           }
         }
       }
@@ -2414,56 +2131,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "游戏叠加层适配组件"
-          }
-        }
-      }
-    },
-    "Patch ntdll" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修补 ntdll"
-          }
-        }
-      }
-    },
-    "Patch the compatibility tool" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修补兼容工具"
-          }
-        }
-      }
-    },
-    "Patched components are missing." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少已修补的组件。"
-          }
-        }
-      }
-    },
-    "Patching" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在应用补丁"
-          }
-        }
-      }
-    },
-    "Please run CrossOver and try again." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先运行 CrossOver，然后重试。"
           }
         }
       }
@@ -2514,16 +2181,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "独占空间"
-          }
-        }
-      }
-    },
-    "RVA %@ falls in no mapped section of the %@ ntdll, so the %@ cannot be located." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "RVA %@ 不在 %@ ntdll 的任何已映射节内，无法定位%@。"
           }
         }
       }
@@ -3058,12 +2715,22 @@
         }
       }
     },
-    "Select a copy of CrossOver or a Hadron Wine runtime folder." : {
+    "Runtime folder not found." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请选择一份 CrossOver 应用或 Hadron Wine 运行时文件夹。"
+            "value" : "未找到运行时文件夹。"
+          }
+        }
+      }
+    },
+    "Select a Hadron Wine runtime folder." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择一个 Hadron Wine 运行时文件夹。"
           }
         }
       }
@@ -3104,16 +2771,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置兼容工具"
-          }
-        }
-      }
-    },
-    "Set up the compatibility tool again." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新设置兼容工具。"
           }
         }
       }
@@ -3461,136 +3118,6 @@
         }
       }
     },
-    "The %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@"
-          }
-        }
-      }
-    },
-    "The %@ cave at %@ is not empty. This ntdll is either already patched or not the build its hash claimed." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 在 %@ 处的代码空隙非空。此 ntdll 可能已修补，或并非哈希值所对应的版本。"
-          }
-        }
-      }
-    },
-    "The %@ detour goes to %@, below its cave at %@, so writing it would land in live code." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 跳转目标为 %@，位于 %@ 处的代码空隙之前；写入会覆盖现有代码，已拒绝操作。"
-          }
-        }
-      }
-    },
-    "The %@ detour is %lld bytes and the cave holds %lld, so writing it would overrun into live code." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 跳转补丁有 %lld 字节，但代码空隙仅容纳 %lld 字节；写入会覆盖现有代码，已拒绝操作。"
-          }
-        }
-      }
-    },
-    "The %@ hook site at %@ holds %@ instead of %@, so the offsets do not belong to this ntdll." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 在 %@ 处的挂钩位置内容为 %@，而非 %@，偏移量与此 ntdll 不匹配。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll at %@ hashes %@ and build %@ expects %@. It is already patched, or from another CrossOver build." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@ 处的 %1$@ ntdll 的哈希值为 %3$@，但构建版本 %4$@ 预期为 %5$@。该文件可能已修补，或来自其他 CrossOver 版本。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll file alignment %@ is not a power of two." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 的文件对齐值 %@ 不是 2 的幂。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll has no PE header where its DOS stub points." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 的 DOS 存根所指向的位置没有 PE 头。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll has no free section header slot for the detour." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 没有可供跳转补丁使用的空闲节头槽位。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll image ends at %@, and the detour section was pinned at %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 映像结束于 %@，但跳转补丁节固定在 %@。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll is based at %@, and the detour was linked against %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 的基址为 %@，但跳转补丁链接时使用的基址为 %@。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll is machine %@, expected %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 的机器类型为 %@，预期为 %@。"
-          }
-        }
-      }
-    },
-    "The %@ ntdll optional header is %@, expected %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ntdll 的可选头为 %@，预期为 %@。"
-          }
-        }
-      }
-    },
     "The Steam client will not update itself." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3617,56 +3144,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "随附的 Hadron 动态库无效。"
-          }
-        }
-      }
-    },
-    "The cave" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "代码空隙"
-          }
-        }
-      }
-    },
-    "The cave is %lld bytes from the hook site, which a relative jump cannot reach." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "代码空隙距挂钩位置 %lld 字节，超出相对跳转指令的范围。"
-          }
-        }
-      }
-    },
-    "The clone has no Wine loader at %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "副本的 %@ 处没有 Wine 加载器。"
-          }
-        }
-      }
-    },
-    "The cloned Wine loader at %@ does not match build %@. Expected %@, found %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制到 %@ 的 Wine 加载器与构建版本 %@ 不匹配。预期为 %@，实际为 %@。"
-          }
-        }
-      }
-    },
-    "The compatibility tool was not set up because CrossOver is not activated." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CrossOver 尚未激活，因此未能设置兼容工具。"
           }
         }
       }
@@ -3701,16 +3178,6 @@
         }
       }
     },
-    "The detour is %lld bytes from the hook site, which a branch and link cannot reach." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "跳转补丁距挂钩位置 %lld 字节，超出分支链接指令的范围。"
-          }
-        }
-      }
-    },
     "The game SAVE DATA inside the prefix WILL BE LOST." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3731,16 +3198,6 @@
         }
       }
     },
-    "The hook site" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "挂钩位置"
-          }
-        }
-      }
-    },
     "The installed build record is invalid." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3751,32 +3208,12 @@
         }
       }
     },
-    "The patched %@ ntdll has not been copied into place." : {
+    "The runtime folder it was copied from is not removed." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "修补后的 %@ ntdll 尚未复制到目标位置。"
-          }
-        }
-      }
-    },
-    "The patched %@ ntdll hashes %@ and build %@ expects %@. Nothing was written." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "修补后的 %@ ntdll 哈希值为 %@，但构建版本 %@ 预期为 %@。未写入任何内容。"
-          }
-        }
-      }
-    },
-    "There is no ntdll to patch at %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 处没有可修补的 ntdll。"
+            "value" : "不会移除复制来源的运行时文件夹。"
           }
         }
       }
@@ -3797,16 +3234,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以下文件未能更新：%@。"
-          }
-        }
-      }
-    },
-    "This Wine runtime needs no license." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此 Wine 运行时无需许可证。"
           }
         }
       }
@@ -3841,12 +3268,12 @@
         }
       }
     },
-    "This can also fix issues where a game previously started/worked and does not work now, even if you did not switch CrossOver types." : {
+    "This can also fix issues where a game previously started/worked and does not work now." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "即使没有切换 CrossOver 类型，也可能修复游戏之前能运行、现在却无法运行的问题。"
+            "value" : "也可能修复游戏之前能运行、现在却无法运行的问题。"
           }
         }
       }
@@ -3861,12 +3288,12 @@
         }
       }
     },
-    "This tool is intended to repair a prefix after switching between Rosetta/FEX CrossOver." : {
+    "This tool is intended to repair a prefix after its compatibility tool changed." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此工具用于修复在 Rosetta 与 FEX 版 CrossOver 之间切换后的游戏容器。"
+            "value" : "此工具用于修复更换兼容工具后的游戏容器。"
           }
         }
       }
@@ -4001,26 +3428,6 @@
         }
       }
     },
-    "Verify CrossOver" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证 CrossOver"
-          }
-        }
-      }
-    },
-    "Verify CrossOver license" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证 CrossOver 许可证"
-          }
-        }
-      }
-    },
     "Verifying" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4057,6 +3464,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wine 日志"
+          }
+        }
+      }
+    },
+    "Wine Runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wine 运行时"
           }
         }
       }
@@ -4137,12 +3554,12 @@
         }
       }
     },
-    "another version of CrossOver" : {
+    "an earlier Wine runtime" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "其他版本的 CrossOver"
+            "value" : "较早的 Wine 运行时"
           }
         }
       }
@@ -4193,16 +3610,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "包含未知行类型 %@。已知类型：base、package、file、bundle。"
-          }
-        }
-      }
-    },
-    "hook site" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "挂钩位置"
           }
         }
       }
