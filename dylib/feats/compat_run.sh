@@ -578,6 +578,11 @@ import_prefix_settings() {
     retina_line='"RetinaMode"=-'
   fi
   controllers_planned=0
+  # winebus on macOS only has IOHID, which it counts as hidraw, and it takes a hidraw
+  # gamepad only with SDL and the input backend off. These runtimes have neither, so
+  # without this Steam Input's virtual Xbox pad never reaches the game.
+  winebus_hidraw=1
+  grep -q '^"DisableInput"=dword:00000001' "$WINEPREFIX/system.reg" 2>/dev/null || winebus_hidraw=0
   if plan_hidden_controllers 2>/dev/null; then
     controllers_planned=1
   else
@@ -596,6 +601,8 @@ import_prefix_settings() {
       '[HKEY_LOCAL_MACHINE\Software\Classes\steam]' '"URL Protocol"=""' '' \
       '[HKEY_LOCAL_MACHINE\Software\Classes\steam\shell\open\command]' \
       '@="\"C:\\Program Files (x86)\\Steam\\steam.exe\" \"%1\""' '' \
+      '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\winebus]' \
+      '"Enable SDL"=dword:00000000' '"DisableInput"=dword:00000001' '' \
       && hidraw_lines add "$controllers_add" && hidraw_lines remove "$controllers_remove"; } \
       > "$settings_file" 2>/dev/null; then
     [ -z "$settings_file" ] || rm -f "$settings_file"
@@ -609,7 +616,7 @@ import_prefix_settings() {
   rm -f "$settings_file"
   if [ "$import_status" -eq 0 ] && [ "$controllers_planned" -eq 1 ]; then
     write_owned_controllers "$controllers_wanted" 2>/dev/null || true
-    if [ -n "$controllers_add$controllers_remove" ]; then
+    if [ -n "$controllers_add$controllers_remove" ] || [ "$winebus_hidraw" = 0 ]; then
       # Wine only reads these keys when it starts, so restart Wine to apply them.
       without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
       without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
