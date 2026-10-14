@@ -3323,6 +3323,16 @@
         }
       }
     },
+    "Start Steam, or bring it to the front." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动 Steam，或将其调到最前面。"
+          }
+        }
+      }
+    },
     "Started %@ in %@." : {
       "localizations" : {
         "zh-Hans" : {

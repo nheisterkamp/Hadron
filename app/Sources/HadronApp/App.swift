@@ -69,6 +69,11 @@ struct HadronApp: App {
         }
 
         CommandMenu("Setup") {
+            Button("Open Steam") { SteamBundle.open() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+            Divider()
+
             Button("Install") { Task { await status.requestInstall() } }
                 .keyboardShortcut("i", modifiers: .command)
                 .disabled(!status.canInstall)

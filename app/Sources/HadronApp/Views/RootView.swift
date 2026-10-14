@@ -49,5 +49,13 @@ struct RootView: View {
             case .launches: LaunchesView()
             }
         }
+        // On every pane: starts Steam, or brings it forward when it runs.
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(String(localized: "Open Steam")) { SteamBundle.open() }
+                    .help(String(localized: "Start Steam, or bring it to the front."))
+                    .disabled(!SteamBundle.isPresent)
+            }
+        }
     }
 }
