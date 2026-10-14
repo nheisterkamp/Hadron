@@ -245,14 +245,6 @@ prefix_machine() {
   od -A n -t x2 -j "$((off + 4))" -N 2 "$dll" 2>/dev/null | tr -d ' \n'
 }
 
-tool_name() {
-  case "$1" in
-    aa64) printf 'an arm64 (FEX) Wine runtime' ;;
-    8664) printf 'an x86_64 (Rosetta) Wine runtime' ;;
-    *) printf 'an older 32-bit setup' ;;
-  esac
-}
-
 # Steam passes "run" for helpers such as install scripts, which get no dialog.
 show_alert() {
   [ "$verb" != run ] || return 0
@@ -267,16 +259,48 @@ alert_safe() {
   printf '%s' "$1" | tr -d '"\\'
 }
 
-refuse_foreign_prefix() {
+# A wineserver another runtime left on this prefix would write its registry back over
+# the conversion below. That runtime's own wineserver -k ends it and its processes,
+# saving the registry; SIGTERM is the fallback.
+stop_prefix_wineserver() {
+  for pid in $(/usr/sbin/lsof -t -- "$WINEPREFIX" 2>/dev/null); do
+    server=$(ps -o comm= -p "$pid" 2>/dev/null)
+    case "$server" in
+      /*/wineserver) ;;
+      *) continue ;;
+    esac
+    echo "=== stopping $server ($pid), left by another runtime ===" >> "$log" 2>&1 || true
+    without_lock_fds "$server" -k >> "$log" 2>&1 || kill -TERM "$pid" 2>/dev/null || continue
+    tries=0
+    while kill -0 "$pid" 2>/dev/null && [ "$tries" -lt 50 ]; do
+      sleep 0.2
+      tries=$((tries + 1))
+    done
+    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
+  done
+  return 0
+}
+
+# A prefix moves between x86_64 (Rosetta) and arm64 (FEX) Wine in place: Wine's prefix
+# update replaces the builtin DLLs in system32 with the other architecture's. Only the
+# WoW64 emulator keys survive it, since wine.inf never overwrites them, so they are
+# dropped for the update to write them again, and the update is forced.
+convert_foreign_prefix() {
   case "${wine_unix##*/}" in
     aarch64-unix) want=aa64 ;;
     *) want=8664 ;;
   esac
   have=$(prefix_machine) || return 0
   [ "$have" = "$want" ] && return 0
-  echo "=== prefix ntdll is $have and this compatibility tool wants $want, rebuild the prefix in Hadron ===" >> "$log" 2>&1 || true
-  show_alert "This game needs its prefix rebuilt" "This game originally ran under $(tool_name "$have"), but $(tool_name "$want") is present now. The prefix needs to be rebuilt in Hadron in order to run the game. You will not lose game saves by rebuilding the prefix."
-  exit 1
+  [ -f "$WINEPREFIX/system.reg" ] || return 0
+  echo "=== prefix ntdll is $have and this compatibility tool wants $want, Wine converts it in place ===" >> "$log" 2>&1 || true
+  stop_prefix_wineserver
+  reg="$WINEPREFIX/system.reg"
+  awk '/^\[Software\\\\Microsoft\\\\Wow64\\\\[^]]*\]/ { skip = 1; next }
+       skip && /^\[/ { skip = 0 }
+       !skip' "$reg" > "$reg.hadron-new" && mv -f "$reg.hadron-new" "$reg" \
+    || { rm -f "$reg.hadron-new"; echo "=== could not reset the WoW64 keys ===" >> "$log" 2>&1 || true; }
+  printf '0\n' > "$WINEPREFIX/.update-timestamp" 2>/dev/null || true
 }
 
 last_wine_build() {
@@ -304,7 +328,7 @@ last_wine_build() {
 }
 
 # Wine updates a prefix in place when the runtime changes, as Proton does, so a game can
-# move between runtimes. Only refuse_foreign_prefix still refuses, for another arch.
+# move between runtimes, and convert_foreign_prefix moves it to another arch.
 note_other_build() {
   record="$STEAM_COMPAT_DATA_PATH/hadron-build"
   had_build=""
@@ -1072,7 +1096,7 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   stage_step="prefix build check"
   note_other_build
   stage_step="prefix arch check"
-  refuse_foreign_prefix
+  convert_foreign_prefix
   claim_prefix
   without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
   stage_step="prefix seed"
@@ -1222,6 +1246,9 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
       src="$bridge_src/$rel"
       if [ ! -f "$src" ]; then
         echo "=== bridge missing $f ===" >> "$log" 2>&1 || true
+        # One staged for the other arch, before the prefix was converted, would load
+        # instead of the runtime's own.
+        [ "$f" != lsteamclient.so ] || rm -f "$prefix_steam/$f"
         continue
       fi
       cmp -s "$src" "$prefix_steam/$f" && continue
