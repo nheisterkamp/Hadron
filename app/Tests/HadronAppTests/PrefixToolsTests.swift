@@ -271,38 +271,26 @@ struct PrefixToolsTests {
         #expect(source.contains(#"drive_c/windows/system32/ntdll.dll"#))
     }
 
-    // Both names come off the same machine words the arch rule uses, so a wrong word or the
-    // two swapped tells the player to keep the build they have and rebuild for the other.
-    @Test("The dialog names the build that made the prefix and the one installed now")
-    func dialogNamesBothBuilds() throws {
+    // A prefix of the other arch is converted in place, not refused. Wine's update swaps the
+    // builtins, so the script only has to clear what the update keeps or cannot get past.
+    @Test("A prefix of the other arch is converted, not refused")
+    func otherArchIsConverted() throws {
         let source = try Self.compatSource()
+        let body = try #require(source.firstMatch(of: /convert_foreign_prefix\(\) \{\n(?s:(.*?))\n\}\n/))
+        let convert = String(body.1)
 
-        // Written in compat_run.sh as: aa64) printf 'an arm64 (FEX) Wine runtime' ;;
-        func name(of word: String) throws -> String {
-            let match = try #require(
-                source.firstMatch(of: try Regex("\(word)\\) printf '([^']+)'")),
-                "compat_run.sh no longer names \(word)")
-            return String(match[1].substring ?? "")
-        }
-
-        // The machine word each loader wants, taken from the rule rather than restated.
-        func wanted(_ pattern: String) throws -> String {
-            let match = try #require(source.firstMatch(of: try Regex(pattern)))
-            return String(match[1].substring ?? "")
-        }
-
-        #expect(try name(of: wanted(#"aarch64-unix\) want=(\w+)"#)).contains("FEX"))
-        #expect(try name(of: wanted(#"\*\) want=(\w+)"#)).contains("Rosetta"))
-
-        // A prefix that reads as 32 bit is neither build, so it gets no build name.
-        let fallback = try #require(source.firstMatch(of: /\*\) printf '([^']+)'/))
-        let vague = String(fallback.1)
-        #expect(!vague.contains("FEX") && !vague.contains("Rosetta"))
-
-        // What made the prefix is named first and blamed, what is installed second.
-        let built = try #require(source.range(of: #"$(tool_name "$have")"#))
-        let installed = try #require(source.range(of: #"$(tool_name "$want")"#))
-        #expect(built.lowerBound < installed.lowerBound)
+        #expect(source.contains("  convert_foreign_prefix\n"))
+        #expect(!source.contains("refuse_foreign_prefix"))
+        // wine.inf never overwrites the WoW64 emulator keys.
+        #expect(convert.contains(#"Microsoft\\\\Wow64"#))
+        // A loader can refuse the other arch's kernel32.dll before the update runs, and
+        // only Wine's own builtins go, never a game's DLLs.
+        #expect(convert.contains(#"'Wine (builtin|placeholder) DLL'"#))
+        #expect(convert.contains("drive_c/windows/system32"))
+        // The update has to run even when wine.inf's time happens to match.
+        #expect(convert.contains(#".update-timestamp"#))
+        // The other runtime's wineserver would write its registry back over the change.
+        #expect(convert.contains("stop_prefix_wineserver"))
     }
 
     // A newline inside an AppleScript string literal is a syntax error, so osascript writes
