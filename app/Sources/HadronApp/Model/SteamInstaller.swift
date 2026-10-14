@@ -119,7 +119,8 @@ enum SteamInstaller {
             try verifyRunner(build, SupportPaths.runnerRoot(forBuild: build.id, runners: runners))
         }
         try modifications.mark(app)
-        let patching = try needsPatching(plist: plist, dylib: dylib, shipping: payload.dylib, app: app)
+        let resign = suppliedSign == nil && SteamSigning(support: deployedVersion.deletingLastPathComponent()).wantsResigning(app)
+        let patching = try needsPatching(plist: plist, dylib: dylib, shipping: payload.dylib, app: app, resign: resign)
         let replacingFiles = try files.contains {
             try $0.needsClientStopped && !$0.matches() && FileManager.default.fileExists(atPath: $0.destination.path(percentEncoded: false))
         }
@@ -261,11 +262,11 @@ enum SteamInstaller {
         }
     }
 
-    static func needsPatching(plist: URL, dylib: URL, shipping: URL, app: URL) throws -> Bool {
+    static func needsPatching(plist: URL, dylib: URL, shipping: URL, app: URL, resign: Bool = false) throws -> Bool {
         let deployed = SteamBundle.currentInsert(at: plist) == dylib.path(percentEncoded: false)
             && SteamBundle.currentControllerBlock(at: plist) == SteamBundle.controllerBlockValue
         let file = DeploymentContent.File(source: shipping, destination: dylib, name: "hadron.dylib", allowsResigning: true)
-        if deployed, try file.matches() {
+        if deployed, !resign, try file.matches() {
             AppLog.note("install: Steam already carries this dylib, installing for this account only")
             return false
         }
@@ -396,9 +397,13 @@ enum SteamInstaller {
     static func designatedRequirement(of app: URL) -> String? {
         guard let result = try? Shell.run("/usr/bin/codesign", ["-d", "-r-", app.path(percentEncoded: false)])
         else { return nil }
+        // An ad-hoc signature has no requirement of its own, and codesign prints the
+        // implicit one as a comment.
+        let marker = "designated => "
         return (result.stdout + result.stderr).split(separator: "\n")
-            .first { $0.hasPrefix("designated => ") }
-            .map { String($0.dropFirst("designated => ".count)) }
+            .map { $0.hasPrefix("# ") ? $0.dropFirst(2) : $0 }
+            .first { $0.hasPrefix(marker) }
+            .map { String($0.dropFirst(marker.count)) }
     }
 
     // macOS does not automatically clear a pre-existing input access approval, so it needs to be cleared
@@ -413,7 +418,7 @@ enum SteamInstaller {
 
     static func failedInputAccessResets() -> [String] {
         inputAccessServices.filter { service in
-            let result = try? Shell.run("/usr/bin/tccutil", ["reset", service, "com.valvesoftware.steam"])
+            let result = try? Shell.run("/usr/bin/tccutil", ["reset", service, SteamBundle.bundleIdentifier])
             return result?.succeeded != true
         }
     }

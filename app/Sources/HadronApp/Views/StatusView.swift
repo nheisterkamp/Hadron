@@ -1,5 +1,6 @@
 // 'Status' view, see SystemStatus for actual logic
 
+import AppKit
 import SwiftUI
 
 enum StatusTone: Sendable {
@@ -235,6 +236,22 @@ struct StatusView: View {
             Text(Uninstall.confirmation())
         }
         .task { if status.snapshot == nil { await status.refresh() } }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) {
+            refreshIfSteam($0)
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)) {
+            refreshIfSteam($0)
+        }
+    }
+
+    // Steam quitting or starting changes what the page offers, such as "Close Steam".
+    private func refreshIfSteam(_ note: Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+            app.bundleIdentifier == SteamBundle.bundleIdentifier
+                || app.executableURL?.lastPathComponent == "steam_osx",
+            status.isIdle
+        else { return }
+        Task { await status.refresh() }
     }
 
     private func asking(_ confirmation: SystemStatus.Confirmation) -> Binding<Bool> {

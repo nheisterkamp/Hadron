@@ -179,8 +179,9 @@ enum DeploymentContent {
         do {
             let payload = try InstallPayload.locate()
             let bridge = try BridgePayload.locate()
-            let pinned = try pinnedFiles(bridge: SupportPaths.bridge, runners: SupportPaths.runners)
+            var pinned = try pinnedFiles(bridge: SupportPaths.bridge, runners: SupportPaths.runners)
                 .filter { Digest.sha256IfPresent($0.destination) != $0.hash }.map(\.name)
+            if SteamSigning().wantsResigning(SupportPaths.Steam.app) { pinned.append("Steam signature") }
             let files = files(payload: payload, bridgePayload: bridge, app: SupportPaths.Steam.app,
                               bridge: SupportPaths.bridge, signatures: SupportPaths.signatures,
                               fonts: SupportPaths.fonts,

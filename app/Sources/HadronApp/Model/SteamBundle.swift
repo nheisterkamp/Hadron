@@ -20,6 +20,7 @@ enum SteamBundle {
 
     static let plistBackupName = "Info.plist.before-hadron"
     static let environmentKey = "LSEnvironment"
+    static let bundleIdentifier = "com.valvesoftware.steam"
 
     static var isPresent: Bool {
         FileManager.default.fileExists(atPath: SupportPaths.Steam.app.path(percentEncoded: false))

@@ -22,6 +22,18 @@ struct SteamSigning: Sendable {
 
     var keychain: URL { directory.appending(path: "hadron-signing.keychain-db") }
     var passwordFile: URL { directory.appending(path: "keychain-password") }
+    // Left when no identity could be made, so Steam is not offered a new signature on
+    // every check only to be signed ad hoc again.
+    var unavailableMarker: URL { directory.appending(path: "unavailable") }
+
+    // Steam still has the ad-hoc signature an earlier Hadron gave it, and the identity
+    // could replace it.
+    func wantsResigning(_ app: URL) -> Bool {
+        guard !FileManager.default.fileExists(atPath: path(unavailableMarker)),
+            let requirement = SteamInstaller.designatedRequirement(of: app)
+        else { return false }
+        return requirement.hasPrefix("cdhash ")
+    }
 
     // Signs with the identity, made the first time; ad hoc when it cannot be had.
     func sign(_ url: URL, step: String = SteamInstaller.step) throws {
@@ -46,6 +58,7 @@ struct SteamSigning: Sendable {
         } catch {
             AppLog.note("signing: could not make an identity, signing ad hoc: \(error)")
             _ = try? Shell.run("/usr/bin/security", ["delete-keychain", path(keychain)])
+            FileManager.default.createFile(atPath: path(unavailableMarker), contents: Data())
             return nil
         }
         return unlock(password) ? findIdentity() : nil

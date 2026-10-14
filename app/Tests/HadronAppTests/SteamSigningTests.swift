@@ -54,6 +54,33 @@ struct SteamSigningTests {
         #expect(!list.contains(signing.keychain.lastPathComponent))
     }
 
+    // An install from before the identity left Steam ad hoc; that has to show as an update.
+    @Test("An ad-hoc signed Steam wants the identity, until it has it or none can be made")
+    func adHocWantsResigning() throws {
+        let files = FileManager.default
+        let work = files.temporaryDirectory.appending(path: "steam-resign-\(UUID().uuidString)")
+        try files.createDirectory(at: work, withIntermediateDirectories: true)
+        let signing = SteamSigning(support: work)
+        defer {
+            _ = try? Shell.run("/usr/bin/security", ["delete-keychain", signing.keychain.path(percentEncoded: false)])
+            try? files.removeItem(at: work)
+        }
+        let target = work.appending(path: "steam_osx")
+        try files.copyItem(at: URL(filePath: "/bin/ls"), to: target)
+
+        try SteamInstaller.adHocSign(target)
+        #expect(signing.wantsResigning(target))
+
+        try files.createDirectory(at: signing.directory, withIntermediateDirectories: true)
+        files.createFile(atPath: signing.unavailableMarker.path(percentEncoded: false), contents: Data())
+        #expect(!signing.wantsResigning(target), "no identity can be had, so ad hoc is as good as it gets")
+        try files.removeItem(at: signing.unavailableMarker)
+
+        try signing.sign(target)
+        #expect(!signing.wantsResigning(target))
+        #expect(!signing.wantsResigning(work.appending(path: "missing")))
+    }
+
     @Test("The installer resets Steam's permissions only when the requirement changes")
     func resetFollowsRequirement() throws {
         let source = try String(
