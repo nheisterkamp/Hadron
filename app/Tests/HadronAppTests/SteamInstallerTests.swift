@@ -125,7 +125,8 @@ struct SteamInstallerTests {
             verifyRunner: verifyRunner,
             stopClient: { _, onStopping in if stopped { onStopping() }; return stopped },
             register: { calls.register($0) },
-            resetInputAccess: { calls.resetInputAccess() }
+            resetInputAccess: { calls.resetInputAccess() },
+            sign: { try SteamInstaller.adHocSign($0) }
         )
         if recordBuild {
             try SteamInstaller.finish(outcome, deployedVersion: fixture.deployedVersion, isCurrent: { _ in true })

@@ -73,6 +73,7 @@ enum SteamInstaller {
         stopClient: ClientStopper = stopTheClient,
         register: BundleRegistrar = { SteamBundle.register($0) },
         resetInputAccess: () -> Void = resetInputAccess,
+        sign suppliedSign: ((URL) throws -> Void)? = nil,
         report: @escaping @Sendable (InstallPhase) -> Void = { _ in }
     ) throws -> InstallOutcome {
         report(.checkingPayload)
@@ -95,6 +96,7 @@ enum SteamInstaller {
         let record = DeploymentContent.record(beside: deployedVersion)
         let previousBuild = try DeploymentContent.readBuild(at: record)
         let support = deployedVersion.deletingLastPathComponent()
+        let sign = suppliedSign ?? { try SteamSigning(support: support).sign($0) }
         let runners = support.appending(path: "runners")
         let tools = CompatToolList.installed(runners: runners, file: support.appending(path: "tools"))
         let files = DeploymentContent.files(
@@ -154,19 +156,21 @@ enum SteamInstaller {
             backedUp = try backUpPlist(plist, into: backups)
 
             let priorPlist = try? Data(contentsOf: plist)
-            let priorHash = cdhash(of: app)
+            let priorRequirement = designatedRequirement(of: app)
             do {
                 try setInsert(at: plist, to: dylib)
 
                 report(.signing)
-                try adHocSign(dylib)
-                try adHocSign(app.appending(path: "Contents/MacOS/steam_osx"))
-                try adHocSign(app)
+                try sign(dylib)
+                try sign(app.appending(path: "Contents/MacOS/steam_osx"))
+                try sign(app)
             } catch {
-                revertPlist(priorPlist, at: plist, app: app)
+                revertPlist(priorPlist, at: plist, app: app, sign: sign)
                 throw error
             }
-            if cdhash(of: app) != priorHash {
+            // macOS keeps Steam's permissions for as long as this stays the same, which it
+            // does across updates with Hadron's signing identity.
+            if designatedRequirement(of: app) != priorRequirement {
                 resetInputAccess()
             }
         }
@@ -324,10 +328,10 @@ enum SteamInstaller {
         return true
     }
 
-    static func revertPlist(_ bytes: Data?, at plist: URL, app: URL) {
+    static func revertPlist(_ bytes: Data?, at plist: URL, app: URL, sign: (URL) throws -> Void) {
         guard let bytes else { return }
         try? bytes.write(to: plist)
-        try? adHocSign(app)
+        try? sign(app)
     }
 
     static func setInsert(at plist: URL, to dylib: URL) throws {
@@ -346,12 +350,16 @@ enum SteamInstaller {
     }
 
     static func adHocSign(_ url: URL, step: String = step) throws {
+        try sign(url, step: step, arguments: ["-s", "-"])
+    }
+
+    static func sign(_ url: URL, step: String, arguments: [String]) throws {
         let path = url.path(percentEncoded: false)
-        var result = try Shell.run("/usr/bin/codesign", ["-f", "-s", "-", path])
+        var result = try Shell.run("/usr/bin/codesign", ["-f"] + arguments + [path])
         // Fixes codesign refusing a Steam.app that carries Finder info or a resource fork.
         if !result.succeeded, result.stderr.contains("detritus not allowed") {
             clearFinderData(in: enclosingBundle(of: url))
-            result = try Shell.run("/usr/bin/codesign", ["-f", "-s", "-", path])
+            result = try Shell.run("/usr/bin/codesign", ["-f"] + arguments + [path])
         }
         guard result.succeeded else {
             throw StepFailure(
@@ -385,11 +393,12 @@ enum SteamInstaller {
         }
     }
 
-    static func cdhash(of app: URL) -> String? {
-        guard let result = try? Shell.run("/usr/bin/codesign", ["-dvvv", app.path(percentEncoded: false)]) else { return nil }
+    static func designatedRequirement(of app: URL) -> String? {
+        guard let result = try? Shell.run("/usr/bin/codesign", ["-d", "-r-", app.path(percentEncoded: false)])
+        else { return nil }
         return (result.stdout + result.stderr).split(separator: "\n")
-            .first { $0.hasPrefix("CDHash=") }
-            .map { String($0.dropFirst("CDHash=".count)) }
+            .first { $0.hasPrefix("designated => ") }
+            .map { String($0.dropFirst("designated => ".count)) }
     }
 
     // macOS does not automatically clear a pre-existing input access approval, so it needs to be cleared
