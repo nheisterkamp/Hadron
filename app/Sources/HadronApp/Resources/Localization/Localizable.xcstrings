@@ -372,6 +372,16 @@
         }
       }
     },
+    "A game appears here once it has been started with a Hadron compatibility tool." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 Hadron 兼容性工具启动游戏后，游戏会显示在这里。"
+          }
+        }
+      }
+    },
     "A game or Wine tool is running on build %@. Quit it before updating Hadron." : {
       "localizations" : {
         "zh-Hans" : {
@@ -802,6 +812,16 @@
         }
       }
     },
+    "CPU %lld%%" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CPU %lld%%"
+          }
+        }
+      }
+    },
     "Calculating…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -868,6 +888,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在检查 Steam"
+          }
+        }
+      }
+    },
+    "Checking the Wine runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查 Wine 运行环境"
+          }
+        }
+      }
+    },
+    "Checking the prefix" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查游戏容器"
           }
         }
       }
@@ -1032,6 +1072,16 @@
         }
       }
     },
+    "Converting the prefix to this runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在将游戏容器转换到此运行环境"
+          }
+        }
+      }
+    },
     "Copies on other drives %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1092,6 +1142,16 @@
         }
       }
     },
+    "Copying Steam files" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在复制 Steam 文件"
+          }
+        }
+      }
+    },
     "Copying the Wine runtime" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1148,6 +1208,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法写入文件。"
+          }
+        }
+      }
+    },
+    "Creating the prefix" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在创建游戏容器"
+          }
+        }
+      }
+    },
+    "Cut off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已中断"
           }
         }
       }
@@ -1372,6 +1452,16 @@
         }
       }
     },
+    "Did not start (exit %lld)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能启动（退出代码 %lld）"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1442,6 +1532,26 @@
         }
       }
     },
+    "Exited" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已退出"
+          }
+        }
+      }
+    },
+    "Exited with status %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已退出，状态 %lld"
+          }
+        }
+      }
+    },
     "Extracting" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1508,6 +1618,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "游戏"
+          }
+        }
+      }
+    },
+    "Game window open" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游戏窗口已打开"
           }
         }
       }
@@ -1785,12 +1905,32 @@
         }
       }
     },
+    "Launch" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动"
+          }
+        }
+      }
+    },
     "Launch Log" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "启动日志"
+          }
+        }
+      }
+    },
+    "Launches" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动记录"
           }
         }
       }
@@ -1871,6 +2011,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "位置"
+          }
+        }
+      }
+    },
+    "Log" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日志"
           }
         }
       }
@@ -1995,6 +2145,26 @@
         }
       }
     },
+    "No Launch" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无启动记录"
+          }
+        }
+      }
+    },
+    "No Launches" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无启动记录"
+          }
+        }
+      }
+    },
     "No Prefixes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2085,6 +2255,16 @@
         }
       }
     },
+    "Nothing has happened for %lld seconds and the game has no window yet. It may be stuck: stop it, or save diagnostics to see where it waits." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有 %lld 秒没有任何动静，游戏仍没有窗口，可能已卡住：可以停止游戏，或保存诊断信息查看它在等待什么。"
+          }
+        }
+      }
+    },
     "Open %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2171,6 +2351,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在准备"
+          }
+        }
+      }
+    },
+    "Preparing the prefix" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备游戏容器"
           }
         }
       }
@@ -2715,12 +2905,32 @@
         }
       }
     },
+    "Running" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在运行"
+          }
+        }
+      }
+    },
     "Runtime folder not found." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "未找到运行时文件夹。"
+          }
+        }
+      }
+    },
+    "Save Diagnostics…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存诊断信息…"
           }
         }
       }
@@ -2791,6 +3001,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安装与设置"
+          }
+        }
+      }
+    },
+    "Show a launch window while games start" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游戏启动时显示启动窗口"
           }
         }
       }
@@ -2871,6 +3091,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已在“%2$@”中启动 %1$@。"
+          }
+        }
+      }
+    },
+    "Starting" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在启动"
+          }
+        }
+      }
+    },
+    "Starting the game" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在启动游戏"
           }
         }
       }
@@ -3078,6 +3318,26 @@
         }
       }
     },
+    "Stop Game" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止游戏"
+          }
+        }
+      }
+    },
+    "Stopping" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在停止"
+          }
+        }
+      }
+    },
     "Stopping Steam" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3168,12 +3428,12 @@
         }
       }
     },
-    "The copy has no Wine loader at x86_64-unix/wine." : {
+    "The copy has no Wine loader at %@/wine." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该副本在 x86_64-unix/wine 处没有 Wine 加载器。"
+            "value" : "该副本在 %@/wine 处没有 Wine 加载器。"
           }
         }
       }
@@ -3444,6 +3704,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支持版本 %@（支持：%@）"
+          }
+        }
+      }
+    },
+    "Windows processes" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Windows 进程"
           }
         }
       }

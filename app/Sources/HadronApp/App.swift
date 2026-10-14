@@ -7,6 +7,7 @@ struct HadronApp: App {
     @State private var status = SystemStatus()
     @State private var prefixes = PrefixesModel()
     @State private var pane: Pane = .status
+    @State private var launches = LaunchMonitor()
     private let updater = AppUpdater()
 
     init() {
@@ -18,6 +19,7 @@ struct HadronApp: App {
             RootView(pane: $pane)
                 .environment(status)
                 .environment(prefixes)
+                .environment(launches)
                 .frame(minWidth: 720, minHeight: 460)
                 .onChange(of: pane) { prefixes.forgetOutcome() }
                 .onChange(of: status.snapshot?.installedRunners.map(\.id)) {
@@ -25,6 +27,8 @@ struct HadronApp: App {
                 }
         }
         .defaultSize(width: 900, height: 760)
+        // Started by a game for the launch window alone, Hadron keeps its own window closed.
+        .defaultLaunchBehavior(LaunchMonitor.launchedForWindow ? .suppressed : .automatic)
         .commands { menus }
     }
 
@@ -44,6 +48,8 @@ struct HadronApp: App {
                 .keyboardShortcut("2", modifiers: .command)
             Button("Prefix Backups") { pane = .backups }
                 .keyboardShortcut("3", modifiers: .command)
+            Button("Launches") { pane = .launches }
+                .keyboardShortcut("4", modifiers: .command)
 
             Divider()
 
@@ -52,11 +58,12 @@ struct HadronApp: App {
                     switch pane {
                     case .status: await status.refresh()
                     case .prefixes, .backups: await prefixes.load()
+                    case .launches: break
                     }
                 }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(pane == .status ? !status.isIdle : prefixes.isLoading)
+            .disabled(pane == .status ? !status.isIdle : pane == .launches || prefixes.isLoading)
 
             Divider()
         }

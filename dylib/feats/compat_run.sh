@@ -200,10 +200,40 @@ fi
   [ -z "$np_dropped" ] || echo "ignored on arm64 Wine: $np_dropped"
 } >> "$log" 2>&1 || true
 
+# Hadron's launch window follows a game's start through this record, one per game.
+launch_record=""
+launch_started=$(date +%s)
+launch_state=starting
+launch_status=""
+launch_converted=0
+step_started=$launch_started
+note_launch() {
+  [ -n "$launch_record" ] || return 0
+  {
+    printf 'app=%s\nname=%s\nbuild=%s\ndisplay=%s\ncompatdata=%s\ninstall=%s\nlog=%s\n' \
+      "$app_id" "${game_name:-}" "$np_build" "$np_display" "$STEAM_COMPAT_DATA_PATH" \
+      "$STEAM_COMPAT_INSTALL_PATH" "$log"
+    printf 'pid=%s\nstarted=%s\nupdated=%s\nstep=%s\nstep_started=%s\nstate=%s\nstatus=%s\nconverted=%s\n' \
+      "$$" "$launch_started" "$(date +%s)" "$stage_step" "$step_started" "$launch_state" "$launch_status" \
+      "$launch_converted"
+  } > "$launch_record.new" 2>/dev/null && mv -f "$launch_record.new" "$launch_record" 2>/dev/null \
+    || rm -f "$launch_record.new" 2>/dev/null || true
+}
+set_stage() {
+  stage_step=$1
+  step_started=$(date +%s)
+  note_launch
+}
+
 stage_step="startup"
 # shellcheck disable=SC2329 # the trap below invokes this
 report_early_exit() {
   status=$?
+  if [ "$launch_state" = starting ] && [ "$status" != 0 ]; then
+    launch_state=failed
+    launch_status=$status
+    note_launch
+  fi
   [ "$status" = 0 ] && return 0
   echo "=== aborted during $stage_step (exit $status) before launch ===" \
     >> "$log" 2>&1 || true
@@ -223,6 +253,17 @@ case "$app_id" in ''|0) app_id="$SteamAppId" ;; esac
 case "$app_id" in ''|0) app_id=$(basename "$STEAM_COMPAT_DATA_PATH" 2>/dev/null) ;; esac
 case "$app_id" in ''|*[!0-9]*) app_id=0 ;; esac
 echo "app_id=$app_id (STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID)" >> "$log" 2>&1 || true
+
+# Only a game gets a record and the window, not the helpers Steam runs around it. Hadron
+# starts in the background when it is not running; a running Hadron watches the records.
+if [ "$verb" = waitforexitandrun ] && [ "$app_id" != 0 ] \
+    && mkdir -p "$np_support/launches" 2>/dev/null; then
+  launch_record="$np_support/launches/$app_id"
+  note_launch
+  if [ ! -e "$np_support/launch-window-off" ] && ! pgrep -qx HadronApp 2>/dev/null; then
+    open -g -b nl.nhsd.hadron --args --launch-window >> "$log" 2>&1 || true
+  fi
+fi
 
 # Steam does not set SteamAppId or SteamGameId for helpers like the install-script
 # evaluator. If they are set, SteamAPI_Init registers the helper as the running game so the
@@ -294,6 +335,8 @@ convert_foreign_prefix() {
   [ "$have" = "$want" ] && return 0
   [ -f "$WINEPREFIX/system.reg" ] || return 0
   echo "=== prefix ntdll is $have and this compatibility tool wants $want, Wine converts it in place ===" >> "$log" 2>&1 || true
+  launch_converted=1
+  set_stage "prefix conversion"
   stop_prefix_wineserver
   reg="$WINEPREFIX/system.reg"
   awk '/^\[Software\\\\Microsoft\\\\Wow64\\\\[^]]*\]/ { skip = 1; next }
@@ -632,7 +675,7 @@ import_prefix_settings() {
     || echo "=== prefix settings import exited status=$import_status ===" >> "$log" 2>&1 || true
 }
 
-stage_step="runner check"
+set_stage "runner check"
 if [ -z "$np_build" ] || [ ! -d "$np_root/lib/wine" ]; then
   echo "=== build ${np_build:-(none recorded)} behind this compatibility tool is not set up, set it up in Hadron ===" >> "$log" 2>&1 || true
   show_alert "The Wine runtime is not set up" "The Wine runtime behind $(alert_safe "$np_display") is not set up. Set it up in Hadron, or pick another compatibility tool for this game."
@@ -1103,30 +1146,30 @@ link_fonts() {
 
 if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   export WINEPREFIX="$STEAM_COMPAT_DATA_PATH/pfx"
-  stage_step="prefix lock"
+  set_stage "prefix lock"
   prepare_prefix_directory
-  stage_step="prefix build check"
+  set_stage "prefix build check"
   note_other_build
-  stage_step="prefix arch check"
+  set_stage "prefix arch check"
   convert_foreign_prefix
   claim_prefix
   without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
-  stage_step="prefix seed"
+  set_stage "prefix seed"
   seed_prefix_from_template
-  stage_step="profile layout"
+  set_stage "profile layout"
   if ! lay_out_proton_profile; then
     show_alert "Saved-game folders need attention" "Hadron left the conflicting files in place. Open this prefix's hadron-run.log for details before trying again."
     exit 1
   fi
   echo "video: RetinaMode=${HADRON_RETINA:-0}" >> "$log" 2>&1 || true
-  stage_step="game drive"
+  set_stage "game drive"
   map_game_drive
-  stage_step="prefix settings"
+  set_stage "prefix settings"
   import_prefix_settings
-  stage_step="fonts"
+  set_stage "fonts"
   link_fonts
   # A prefix that Wine built just now only has dosdevices from this point on.
-  stage_step="game drive"
+  set_stage "game drive"
   map_game_drive
 fi
 
@@ -1228,7 +1271,7 @@ place_bridge_file() {
   cp -c -fp "$origin" "$2" 2>/dev/null || cp -fp "$bridge_src/$1" "$2" 2>> "$log"
 }
 if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
-  stage_step="bridge staging"
+  set_stage "bridge staging"
   mkdir -p "$prefix_steam"
   bridge_cache=""
   if [ -n "$STEAM_COMPAT_DATA_PATH" ] && ! same_volume "$bridge_src" "$STEAM_COMPAT_DATA_PATH" \
@@ -1553,10 +1596,15 @@ set -- \
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
 [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+launch_state=running
+set_stage "game"
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
 open_pid=$!
 status=0
 wait "$open_pid" || status=$?
+launch_state=exited
+launch_status=$status
+note_launch
 echo "=== game exited status=$status, killing wine prefix ===" >> "$log" 2>&1 || true
 kill_wine_prefix
 echo "=== wine prefix killed, session ending ===" >> "$log" 2>&1 || true
