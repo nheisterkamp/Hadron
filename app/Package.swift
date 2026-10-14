@@ -28,6 +28,7 @@ let package = Package(
                 .process("Resources/Localization"),
                 .copy("Resources/payload.manifest"),
                 .copy("Resources/valve-packages.manifest"),
+                .copy("Resources/runtimes.manifest"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

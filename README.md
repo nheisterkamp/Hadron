@@ -58,6 +58,14 @@ make bridge dobby fonts app
 add a folder from `out/runtime` with "Add Wine Runtime…" (or put it in
 `~/Library/Application Support/hadron/runtimes/`), set it up, and install into Steam.
 
+Hadron can also download the runtimes. `runtime/release.sh <tag> <runtime>...` packs
+staged runtimes into `out/release/<tag>` and writes the manifest the app bundles, with
+each archive's SHA-256; `--publish` uploads them as a GitHub release. The archives leave
+out D3DMetal, which Apple's licence does not allow passing on: Hadron's "Add D3DMetal…"
+takes it from the Game Porting Toolkit or CrossOver on the user's Mac. An Apple Silicon
+runtime is only packed when its loader is signed with a Developer ID profile, since a
+development profile runs on its own devices only.
+
 ## Source layout
 
 The macOS app is in `app`, and the code injected into Steam is in `dylib`.

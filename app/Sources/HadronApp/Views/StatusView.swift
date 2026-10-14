@@ -529,7 +529,8 @@ struct StatusView: View {
     @ViewBuilder
     private func runtimeSection(_ snapshot: StatusSnapshot) -> some View {
         let rows = status.runtimeRows
-        if rows.isEmpty {
+        let downloads = status.downloadableRuntimes
+        if rows.isEmpty, downloads.isEmpty {
             StatusRow(
                 title: String(localized: "Wine Runtime"),
                 value: String(localized: "Not found. Supported: \(SupportedRunners.versionList)."),
@@ -555,6 +556,20 @@ struct StatusView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: status.highlightedRow == row.id)
             .id(row.id)
+        }
+        ForEach(downloads) { download in
+            StatusRow(
+                title: "Hadron \(download.build?.releaseVersion ?? download.id)",
+                value: String(localized: "Available to download"),
+                tone: .neutral,
+                trailing: ByteCountFormatter.string(fromByteCount: download.bytes, countStyle: .file),
+                action: StatusAction(
+                    label: String(localized: "Download"),
+                    isProminent: rows.isEmpty,
+                    help: String(localized: "Download this runtime and set up its compatibility tool."),
+                    isEnabled: status.canInstall
+                ) { Task { await status.downloadRuntime(download) } }
+            )
         }
     }
 
@@ -629,6 +644,15 @@ struct StatusView: View {
                 help: String(localized: "Copy \(row.title) again."),
                 isEnabled: status.canInstall && row.canSetUp
             ) { Task { await status.requestCompatibilityTool(from: install, replacingExisting: true) } })
+        }
+        if let build = row.build, D3DMetalImport.accepts(build), row.copy == .ready || row.install != nil {
+            let root = row.copy == .ready ? SupportPaths.runnerRoot(forBuild: build.id) : row.install!.root
+            items.append(StatusAction(
+                label: D3DMetalImport.isPresent(in: root)
+                    ? String(localized: "Replace D3DMetal\u{2026}") : String(localized: "Add D3DMetal\u{2026}"),
+                help: String(localized: "Add D3DMetal from Apple's Game Porting Toolkit or CrossOver on this Mac."),
+                isEnabled: status.isIdle
+            ) { Task { await status.addD3DMetal(row) } })
         }
         let shown = install?.root
             ?? (row.copy == .none ? nil : SupportPaths.runnerRoot(forBuild: row.buildID))

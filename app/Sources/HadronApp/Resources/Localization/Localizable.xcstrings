@@ -21,6 +21,22 @@
         }
       }
     },
+    "%@ answered %lld for %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ answered %2$lld for %3$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 对 %3$@ 返回了 %2$lld。"
+          }
+        }
+      }
+    },
     "%@ could not be copied out of the prefix. The prefix has been left as it was and nothing has been lost. Check free space and permissions, then try again." : {
       "localizations" : {
         "zh-Hans" : {
@@ -61,6 +77,16 @@
         }
       }
     },
+    "%@ could not be unpacked. " : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法解压 %@。"
+          }
+        }
+      }
+    },
     "%@ could not be written. " : {
       "localizations" : {
         "zh-Hans" : {
@@ -87,6 +113,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 似乎没有可备份的游戏容器。"
+          }
+        }
+      }
+    },
+    "%@ does not hold Wine runtime %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ does not hold Wine runtime %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 中没有 Wine 运行环境 %2$@。"
+          }
+        }
+      }
+    },
+    "%@ does not match the checksum Hadron expects, so it was not used." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 与 Hadron 预期的校验和不符，因此未被使用。"
           }
         }
       }
@@ -121,6 +173,16 @@
         }
       }
     },
+    "%@ has no D3DMetal DLLs." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 中没有 D3DMetal DLL。"
+          }
+        }
+      }
+    },
     "%@ has no prefix at %@." : {
       "localizations" : {
         "zh-Hans" : {
@@ -137,6 +199,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 已在列表中。"
+          }
+        }
+      }
+    },
+    "%@ is already there. Remove it to download the runtime again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已存在。如需重新下载该运行环境，请先将其移除。"
           }
         }
       }
@@ -452,6 +524,36 @@
         }
       }
     },
+    "Add D3DMetal" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加 D3DMetal"
+          }
+        }
+      }
+    },
+    "Add D3DMetal from Apple's Game Porting Toolkit or CrossOver on this Mac." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从这台 Mac 上的 Apple Game Porting Toolkit 或 CrossOver 添加 D3DMetal。"
+          }
+        }
+      }
+    },
+    "Add D3DMetal…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加 D3DMetal…"
+          }
+        }
+      }
+    },
     "Add Wine Runtime…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -468,6 +570,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "从其他文件夹添加 Hadron Wine 运行时。"
+          }
+        }
+      }
+    },
+    "Adding D3DMetal" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在添加 D3DMetal"
           }
         }
       }
@@ -608,6 +720,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确定要继续吗？"
+          }
+        }
+      }
+    },
+    "Available to download" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可供下载"
           }
         }
       }
@@ -898,6 +1020,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在检查 Wine 运行环境"
+          }
+        }
+      }
+    },
+    "Checking the download" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在校验下载"
           }
         }
       }
@@ -1232,6 +1364,16 @@
         }
       }
     },
+    "D3DMetal added. Pick it for a game in the game's Hadron settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 D3DMetal。可在游戏的 Hadron 设置中为该游戏选择它。"
+          }
+        }
+      }
+    },
     "Delete" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1472,6 +1614,26 @@
         }
       }
     },
+    "Download" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载"
+          }
+        }
+      }
+    },
+    "Download a Wine runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载 Wine 运行环境"
+          }
+        }
+      }
+    },
     "Download missing Valve binaries." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1482,12 +1644,48 @@
         }
       }
     },
+    "Download this runtime and set up its compatibility tool." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载此运行环境并设置其兼容性工具。"
+          }
+        }
+      }
+    },
     "Downloaded missing components." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "已下载缺失的组件。"
+          }
+        }
+      }
+    },
+    "Downloading %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在下载 %@"
+          }
+        }
+      }
+    },
+    "Downloading %@, %lld%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Downloading %1$@, %2$lld%%"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在下载 %1$@，%2$lld%%"
           }
         }
       }
@@ -2135,6 +2333,16 @@
         }
       }
     },
+    "No D3DMetal was found in %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %@ 中未找到 D3DMetal。"
+          }
+        }
+      }
+    },
     "No Hadron Wine runtime found." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2735,6 +2943,16 @@
         }
       }
     },
+    "Replace D3DMetal…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换 D3DMetal…"
+          }
+        }
+      }
+    },
     "Replace Steam" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2941,6 +3159,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存诊断信息…"
+          }
+        }
+      }
+    },
+    "Select Apple's Game Porting Toolkit, CrossOver, or a folder with D3DMetal in it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择 Apple Game Porting Toolkit、CrossOver，或包含 D3DMetal 的文件夹。"
           }
         }
       }
@@ -3634,6 +3862,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在解包"
+          }
+        }
+      }
+    },
+    "Unpacking the runtime" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在解压运行环境"
           }
         }
       }

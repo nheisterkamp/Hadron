@@ -194,6 +194,59 @@ final class SystemStatus {
         }
     }
 
+    // Runtimes in the bundled manifest that this Mac has neither as a folder nor a copy.
+    var downloadableRuntimes: [RuntimeDownload] {
+        guard snapshot != nil, downloads.base != nil else { return [] }
+        // The rows cover runtime folders and installed copies alike.
+        let present = Set(runtimeRows.map(\.buildID))
+        return downloads.runtimes.filter { !present.contains($0.id) }
+    }
+
+    @ObservationIgnored let downloads = RuntimeDownloadManifest.bundled()
+
+    // Downloads a runtime and sets up its compatibility tool, as Set Up does for a folder.
+    func downloadRuntime(_ download: RuntimeDownload) async {
+        guard canInstall, let base = downloads.base else { return }
+        await perform(from: RuntimeDownloader.Phase.downloading(name: download.build?.releaseVersion ?? download.id, fraction: nil).label) { progress in
+            let install = try await RuntimeDownloader.run(download, from: base) { progress($0.label) }
+            AppLog.note("runtime downloaded: \(download.id)")
+            let lock = try DeploymentContent.acquireInstallationLock()
+            defer { lock.release() }
+            try await requireInstallableContent()
+            let result = try await Task.detached(priority: .userInitiated) {
+                try RunnerSetup.run(from: install) { progress($0.label) }
+            }.value
+            return runnerOutcome(result)
+        }
+    }
+
+    // Adds D3DMetal from the user's own copy to the runtime folder and its installed copy.
+    func addD3DMetal(_ row: RuntimeRow) async {
+        guard let build = row.build, D3DMetalImport.accepts(build) else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Add")
+        panel.message = String(localized: "Select Apple's Game Porting Toolkit, CrossOver, or a folder with D3DMetal in it.")
+        guard panel.runModal() == .OK, let picked = panel.url else { return }
+
+        await perform(from: String(localized: "Adding D3DMetal")) { _ in
+            try await Task.detached(priority: .userInitiated) {
+                guard let source = D3DMetalImport.locate(in: picked) else {
+                    throw StepFailure(step: D3DMetalImport.step, detail: String(localized: "No D3DMetal was found in \(picked.lastPathComponent)."))
+                }
+                var roots = [SupportPaths.runnerRoot(forBuild: build.id)]
+                if let folder = row.install?.root { roots.append(folder) }
+                for root in roots where FileManager.default.fileExists(atPath: root.appending(path: "lib/wine").path(percentEncoded: false)) {
+                    try D3DMetalImport.install(from: source, into: root)
+                }
+                AppLog.note("d3dmetal added to \(build.id) from \(source.path(percentEncoded: false))")
+            }.value
+            return String(localized: "D3DMetal added. Pick it for a game in the game's Hadron settings.")
+        }
+    }
+
     func addRuntime() async {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
