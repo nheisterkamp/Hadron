@@ -125,6 +125,13 @@ enum PrefixTools {
         environment["WINEDLLPATH"] = "\(root)/lib/wine/\(flavor.peDir):"
             + wine.unixDir.path(percentEncoded: false)
         environment["WINEPREFIX"] = prefix.pfx.path(percentEncoded: false)
+        // The Khronos loader the runtimes carry finds no driver on its own, so give it
+        // MoltenVK as compat_run.sh does for everything but DXVK 3.
+        let moltenVK = runner.appending(path: "share/vulkan/icd.d/MoltenVK_icd.json")
+        if environment["VK_DRIVER_FILES"] == nil,
+           FileManager.default.fileExists(atPath: moltenVK.path(percentEncoded: false)) {
+            environment["VK_DRIVER_FILES"] = moltenVK.path(percentEncoded: false)
+        }
         environment["PATH"] = "\(root)/bin:" + (environment["PATH"] ?? "/usr/bin:/bin")
         return environment
     }

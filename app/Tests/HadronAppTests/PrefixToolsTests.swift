@@ -116,6 +116,33 @@ struct PrefixToolsTests {
         #expect(environment["WINEDLLOVERRIDES"] == nil)
     }
 
+    @Test("Wine started from the app gets MoltenVK when the runtime ships its manifest")
+    func vulkanDriver() throws {
+        let dir = try scratchDirectory("vulkan-driver")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let runner = try makeRuntime(at: dir.appending(path: "runtime"))
+        let unset = PrefixTools.environment(prefix: samplePrefix(), runner: runner)
+        #expect(unset["VK_DRIVER_FILES"] == ProcessInfo.processInfo.environment["VK_DRIVER_FILES"])
+
+        let icd = runner.appending(path: "share/vulkan/icd.d")
+        try FileManager.default.createDirectory(at: icd, withIntermediateDirectories: true)
+        let manifest = icd.appending(path: "MoltenVK_icd.json")
+        try Data("{}".utf8).write(to: manifest)
+        let set = PrefixTools.environment(prefix: samplePrefix(), runner: runner)
+        if ProcessInfo.processInfo.environment["VK_DRIVER_FILES"] == nil {
+            #expect(set["VK_DRIVER_FILES"] == manifest.path(percentEncoded: false))
+        }
+    }
+
+    @Test("A FEX runtime is laid out as its aarch64 tree")
+    func fexLayout() throws {
+        let runner = URL(filePath: "/R")
+        let layout = PrefixTools.layout(runner: runner, flavor: .fex)
+        #expect(layout.loader.path(percentEncoded: false) == "/R/lib/wine/aarch64-unix/wine")
+        let environment = PrefixTools.environment(prefix: samplePrefix(), runner: runner, flavor: .fex)
+        #expect(environment["WINEDLLPATH"] == "/R/lib/wine/aarch64-windows:/R/lib/wine/aarch64-unix")
+    }
+
     @Test("A runtime is laid out as its x86_64 tree by default")
     func defaultsToRosettaLayout() throws {
         let dir = try scratchDirectory("layout-default")
