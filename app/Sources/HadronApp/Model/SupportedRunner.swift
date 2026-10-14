@@ -57,7 +57,7 @@ enum SupportedRunners {
         rosetta(id: "wine-staging-11.15", name: "Wine Staging 11.15"),
         rosetta(id: "wine-11.19", name: "Wine 11.19"),
         rosetta(id: "crossover-26.3", name: "CrossOver Wine 26.3"),
-        fex(id: "wine-11.19-arm64", name: "Wine 11.19 (Apple Silicon)"),
+        fex(id: "wine-11.19-fex", name: "Wine 11.19 (Apple Silicon)"),
     ]
 
     // Steam maps Cloud save paths into a prefix only for a tool whose name contains

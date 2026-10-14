@@ -10,7 +10,7 @@ if (!emit) { console.error('usage: fex.js <emit>'); process.exit(2); }
 const AVX = 'Advertise AVX2 to Rosetta';
 
 // The hook passes only FEX tools; ROSETTA stands for a Rosetta tool next to them.
-const FEX_TOOLS = ['hadron-proton-wine-11.19-arm64'];
+const FEX_TOOLS = ['hadron-proton-wine-11.19-fex'];
 const ROSETTA = 'hadron-proton-wine-11.19';
 const ALL = ['dxmt', 'd3dmetal', 'dxvk', 'dxvk1', 'wined3d'];
 
@@ -67,7 +67,7 @@ for (const form of Object.keys(FORMS)) {
   {
     const { render: L } = panel(emit, form, undefined, { fexTools: FEX_TOOLS });
     const t = runner(`${form}, prefix`);
-    const r = walk(L({ details: details('', { strCompatToolName: 'hadron-proton-wine-11.19-arm' }) }));
+    const r = walk(L({ details: details('', { strCompatToolName: 'hadron-proton-wine-11.19-fe' }) }));
     t.ok(r.find(x => x.type === 'Dropdown').props.rgOptions.some(o => o.data === 'dxmt'),
          'a tool whose name prefixes a FEX tool keeps the Rosetta options');
     failed += t.failed;

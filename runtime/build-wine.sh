@@ -18,7 +18,7 @@
 # Homebrew. PKG_CONFIG_LIBDIR is pinned to DEPS so configure cannot pick up the wrong arch.
 #
 # An arm64 runtime needs macOS 26.5. Its loader maps over a large PAGEZERO and starts
-# itself with 4K pages (patch 0004 in patches/wine-11.19-arm64), which only a process signed with the
+# itself with 4K pages (patch 0004 in patches/wine-11.19-fex), which only a process signed with the
 # com.apple.developer.cross-architecture-support entitlement may do, and an entitlement
 # like that only holds for the main executable of an app bundle with a provisioning
 # profile, and the kernel kills it at launch when it is signed by a certificate the
