@@ -289,7 +289,15 @@ struct StatusView: View {
                     }
                 )
             } else if let outcome = status.outcome {
-                StatusRow(title: String(localized: "Done"), value: outcome, tone: .ok)
+                // After an install or update Steam is usually closed; this starts it again.
+                StatusRow(
+                    title: String(localized: "Done"),
+                    value: outcome,
+                    tone: .ok,
+                    action: status.snapshot?.steamRunning == false && SteamBundle.isPresent
+                        ? StatusAction(label: String(localized: "Open Steam"), isProminent: true) { SteamBundle.open() }
+                        : nil
+                )
             }
 
             if let failure = status.templateCleanupFailure {

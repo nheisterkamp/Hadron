@@ -1,5 +1,6 @@
 // Steam app bundle patching component
 
+import AppKit
 import Foundation
 
 enum SteamDeployment: Sendable, Equatable {
@@ -24,6 +25,10 @@ enum SteamBundle {
 
     static var isPresent: Bool {
         FileManager.default.fileExists(atPath: SupportPaths.Steam.app.path(percentEncoded: false))
+    }
+
+    static func open(_ app: URL = SupportPaths.Steam.app) {
+        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
     }
 
     static var isRunning: Bool {

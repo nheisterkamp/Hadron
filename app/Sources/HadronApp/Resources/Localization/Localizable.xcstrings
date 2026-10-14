@@ -2285,6 +2285,16 @@
         }
       }
     },
+    "Open Steam" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Steam"
+          }
+        }
+      }
+    },
     "Open System Settings" : {
       "localizations" : {
         "zh-Hans" : {
