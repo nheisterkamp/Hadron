@@ -125,6 +125,80 @@ diff --git a/dlls/ntdll/unix/loader.c b/dlls/ntdll/unix/loader.c
  #endif
      execv( argv[1], argv + 1 );
  }
+diff --git a/dlls/ntdll/unix/system.c b/dlls/ntdll/unix/system.c
+--- a/dlls/ntdll/unix/system.c
++++ b/dlls/ntdll/unix/system.c
+@@ -2098,6 +2098,70 @@
+ 
+ #undef READ_ID_REG
+ #undef STR
++    return regidx;
++}
++
++#elif defined(__APPLE__)
++
++static ULONG64 arm_feature( const char *name )
++{
++    char key[64];
++    int value = 0;
++    size_t size = sizeof(value);
++
++    snprintf( key, sizeof(key), "hw.optional.arm.%s", name );
++    if (sysctlbyname( key, &value, &size, NULL, 0 )) return 0;
++    return value != 0;
++}
++
++/* macOS traps reads of the ID registers, so they are put together from the features it
++ * reports. Emulators such as FEX read them to decide which instructions they may use. */
++static DWORD get_core_id_regs_arm64( struct smbios_wine_id_reg_value_arm64 *regs,
++                                     WORD logical_thread_id )
++{
++#define FIELD(feature, shift, value) (arm_feature( feature ) ? (ULONG64)(value) << (shift) : 0)
++    ULONG64 isar0 = FIELD( "FEAT_AES", 4, 1 ) | FIELD( "FEAT_PMULL", 4, 2 ) |
++                    FIELD( "FEAT_SHA1", 8, 1 ) |
++                    (arm_feature( "FEAT_SHA512" ) ? 2ull << 12 : FIELD( "FEAT_SHA256", 12, 1 )) |
++                    FIELD( "FEAT_CRC32", 16, 1 ) | FIELD( "FEAT_LSE", 20, 2 ) |
++                    FIELD( "FEAT_RDM", 28, 1 ) | FIELD( "FEAT_SHA3", 32, 1 ) |
++                    FIELD( "FEAT_DotProd", 44, 1 ) | FIELD( "FEAT_FHM", 48, 1 ) |
++                    (arm_feature( "FEAT_FlagM2" ) ? 2ull << 52 : FIELD( "FEAT_FlagM", 52, 1 ));
++    ULONG64 isar1 = (arm_feature( "FEAT_DPB2" ) ? 2ull : FIELD( "FEAT_DPB", 0, 1 )) |
++                    FIELD( "FEAT_JSCVT", 12, 1 ) | FIELD( "FEAT_FCMA", 16, 1 ) |
++                    (arm_feature( "FEAT_LRCPC2" ) ? 2ull << 20 : FIELD( "FEAT_LRCPC", 20, 1 )) |
++                    FIELD( "FEAT_FRINTTS", 32, 1 ) | FIELD( "FEAT_SB", 36, 1 ) |
++                    FIELD( "FEAT_SPECRES", 40, 1 ) |
++                    (arm_feature( "FEAT_EBF16" ) ? 2ull << 44 : FIELD( "FEAT_BF16", 44, 1 )) |
++                    FIELD( "FEAT_I8MM", 52, 1 );
++    ULONG64 isar2 = FIELD( "FEAT_WFxT", 0, 2 ) | FIELD( "FEAT_RPRES", 4, 1 ) |
++                    FIELD( "FEAT_CSSC", 52, 1 );
++    /* AArch64 only at EL0 and EL1, FP and AdvSIMD with half precision. SVE and SME stay
++     * hidden, since Wine does not save their state. */
++    ULONG64 pfr0 = 1 | 1 << 4 | FIELD( "FEAT_FP16", 16, 1 ) | FIELD( "FEAT_FP16", 20, 1 ) |
++                   FIELD( "FEAT_DIT", 48, 1 ) | FIELD( "FEAT_CSV2", 56, 1 ) | FIELD( "FEAT_CSV3", 60, 1 );
++    ULONG64 pfr1 = FIELD( "FEAT_BTI", 0, 1 ) | FIELD( "FEAT_SSBS", 4, 2 );
++    /* 4K and 16K granules, no 64K. */
++    ULONG64 mmfr0 = 0xfull << 24 | 1ull << 20;
++    ULONG64 mmfr1 = FIELD( "FEAT_AFP", 44, 1 );
++    ULONG64 mmfr2 = FIELD( "FEAT_LSE2", 32, 1 );
++    /* Apple's implementer code, and the CTR_EL0 Apple cores report under Linux: 64 byte
++     * lines, no instruction cache invalidation needed for coherence. */
++    ULONG64 midr = 0x61ull << 24 | 0xfull << 16;
++    ULONG64 ctr = 0x9444c004;
++    DWORD regidx = 0;
++#undef FIELD
++
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4000, midr };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4020, pfr0 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4021, pfr1 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4030, isar0 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4031, isar1 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4032, isar2 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4038, mmfr0 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x4039, mmfr1 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x403a, mmfr2 };
++    regs[regidx++] = (struct smbios_wine_id_reg_value_arm64){ 0x5801, ctr };
+     return regidx;
+ }
+ 
 diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
 --- a/dlls/ntdll/unix/virtual.c
 +++ b/dlls/ntdll/unix/virtual.c

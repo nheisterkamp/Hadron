@@ -502,22 +502,35 @@ cp "$d3dmetal"/*.rtf "$OUT/lib/graphics/d3dmetal/"
 fi
 
 if [ "$ARCH" = arm64 ]; then
+    # FEX at its pin with runtime/fex on top, which lets its unix half switch threads to
+    # hardware TSO on macOS. The builds are incremental, so they run every time.
     fex="$repo/scratch/fex/$FEX_TAG"
-    if [ ! -f "$fex/build_wow64/Bin/libwow64fex.dll" ] || [ ! -f "$fex/build_arm64ec/Bin/libarm64ecfex.dll" ]; then
-        if [ ! -d "$fex/.git" ]; then
-            git clone --quiet --depth 1 --branch "$FEX_TAG" --recurse-submodules --shallow-submodules "$FEX_URL" "$fex"
-        fi
-        [ "$(git -C "$fex" rev-parse HEAD)" = "$FEX_COMMIT" ] || die "$FEX_TAG is not at the pinned $FEX_COMMIT"
-        for target in arm64ec:arm64ec wow64:aarch64; do
-            echo "==> building FEX $FEX_TAG for ${target%%:*}"
-            cmake -S "$fex" -B "$fex/build_${target%%:*}" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_TOOLCHAIN_FILE="$fex/Data/CMake/toolchain_mingw.cmake" \
-                -DMINGW_TRIPLE="${target#*:}-w64-mingw32" -DENABLE_LTO=False -DENABLE_ASSERTIONS=False \
-                -DENABLE_JEMALLOC_GLIBC_ALLOC=False -DBUILD_TESTING=False -DTUNE_ARCH=generic \
-                -DTUNE_CPU=none -DRANGES_NATIVE=OFF
-            cmake --build "$fex/build_${target%%:*}"
-        done
+    if [ ! -d "$fex/.git" ]; then
+        git clone --quiet --depth 1 --branch "$FEX_TAG" --recurse-submodules --shallow-submodules "$FEX_URL" "$fex"
     fi
+    [ "$(git -C "$fex" rev-parse HEAD)" = "$FEX_COMMIT" ] || die "$FEX_TAG is not at the pinned $FEX_COMMIT"
+    if [ ! -f "$fex/.hadron-patched" ]; then
+        for patch in "$here"/fex/*.patch; do
+            echo "==> applying fex/${patch##*/}"
+            git -C "$fex" apply "$patch" || die "${patch##*/} does not apply to $FEX_TAG"
+        done
+        touch "$fex/.hadron-patched"
+    fi
+    for target in arm64ec:arm64ec wow64:aarch64; do
+        echo "==> building FEX $FEX_TAG for ${target%%:*}"
+        [ -f "$fex/build_${target%%:*}/build.ninja" ] || cmake -S "$fex" -B "$fex/build_${target%%:*}" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$fex/Data/CMake/toolchain_mingw.cmake" \
+            -DMINGW_TRIPLE="${target#*:}-w64-mingw32" -DENABLE_LTO=False -DENABLE_ASSERTIONS=False \
+            -DENABLE_JEMALLOC_GLIBC_ALLOC=False -DBUILD_TESTING=False -DTUNE_ARCH=generic \
+            -DTUNE_CPU=none -DRANGES_NATIVE=OFF
+        cmake --build "$fex/build_${target%%:*}"
+    done
+    echo "==> building FEX's unix half"
+    [ -f "$fex/build_unixlib/build.ninja" ] || cmake -S "$fex/Source/Windows/UnixLib" -B "$fex/build_unixlib" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=26.5
+    cmake --build "$fex/build_unixlib"
+
     # install_name_tool keeps a linker signature valid but breaks a codesign one, such as
     # MoltenVK's, and an arm64 library without a valid signature takes the process down.
     for lib in "$OUT"/lib/*.dylib; do
@@ -530,6 +543,8 @@ if [ "$ARCH" = arm64 ]; then
     for dll in xtajit64.dll xtajit.dll; do
         "$WINE_BUILD/tools/winebuild/winebuild" --builtin "$OUT/lib/wine/aarch64-windows/$dll"
     done
+    # FEX loads these by name from the unix dir.
+    cp "$fex/build_unixlib/libarm64ecfex.so" "$fex/build_unixlib/libwow64fex.so" "$OUT/lib/wine/aarch64-unix/"
     cp "$fex/LICENSE" "$OUT/lib/wine/aarch64-windows/FEX-LICENSE"
 
     # The loader as the main executable of a bundle that carries the profile. Patch 0005

@@ -1,0 +1,162 @@
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 633f252..c650672 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -1008,6 +1008,7 @@ void BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After
+ NTSTATUS ThreadInit() {
+   std::scoped_lock Lock(ThreadCreationMutex);
+   FEX::Windows::InitCRTThread();
++  FEX::Windows::UnixLib::ThreadInitHardwareTSO();
+   const auto CPUArea = GetCPUArea();
+ 
+   static constexpr size_t EmulatorStackSize = 0x40000;
+diff --git a/Source/Windows/Common/FEXUnixLib.cpp b/Source/Windows/Common/FEXUnixLib.cpp
+index e37807f..06729e0 100644
+--- a/Source/Windows/Common/FEXUnixLib.cpp
++++ b/Source/Windows/Common/FEXUnixLib.cpp
+@@ -96,6 +96,8 @@ bool Available() {
+   return UnixLibHandle != 0;
+ }
+ 
++static bool HardwareTSOEnabled {};
++
+ bool TryEnableHardwareTSO() {
+   if (!Available()) {
+     return false;
+@@ -105,7 +107,17 @@ bool TryEnableHardwareTSO() {
+     .Enable = true,
+   };
+ 
+-  return Call(FEXUnixLibFunctions::SetHardwareTSOControl, &Args) == STATUS_SUCCESS;
++  HardwareTSOEnabled = Call(FEXUnixLibFunctions::SetHardwareTSOControl, &Args) == STATUS_SUCCESS;
++  return HardwareTSOEnabled;
++}
++
++void ThreadInitHardwareTSO() {
++  if (HardwareTSOEnabled) {
++    FEXUnixLib_SetHardwareTSOControlArgs Args {
++      .Enable = true,
++    };
++    Call(FEXUnixLibFunctions::SetHardwareTSOControl, &Args);
++  }
+ }
+ 
+ bool SetKernelUnalignedAtomicControl(uint64_t Flags) {
+diff --git a/Source/Windows/Common/FEXUnixLib.h b/Source/Windows/Common/FEXUnixLib.h
+index c62a763..558efa1 100644
+--- a/Source/Windows/Common/FEXUnixLib.h
++++ b/Source/Windows/Common/FEXUnixLib.h
+@@ -28,6 +28,12 @@ bool Available();
+  */
+ bool TryEnableHardwareTSO();
+ 
++/**
++ * @brief Enables hardware TSO for a new thread when TryEnableHardwareTSO did for the
++ * process, for hosts where a thread does not inherit it.
++ */
++void ThreadInitHardwareTSO();
++
+ /**
+  * @brief Tries to enable kernel unaligned atomic handling if supported.
+  *
+diff --git a/Source/Windows/Common/TSOHandlerConfig.h b/Source/Windows/Common/TSOHandlerConfig.h
+index f63478d..254e821 100644
+--- a/Source/Windows/Common/TSOHandlerConfig.h
++++ b/Source/Windows/Common/TSOHandlerConfig.h
+@@ -19,6 +19,7 @@ public:
+ 
+     if (TSOEnabled() && FEX::Windows::UnixLib::TryEnableHardwareTSO()) {
+       CTX.SetHardwareTSOSupport(true);
++      LogMan::Msg::IFmt("FEX: Hardware TSO enabled!");
+     }
+ 
+     uint64_t Flags = (StrictInProcessSplitLocks() ? FEX_UNALIGN_ATOMIC_STRICT_SPLIT_LOCKS : 0) |
+diff --git a/Source/Windows/UnixLib/CMakeLists.txt b/Source/Windows/UnixLib/CMakeLists.txt
+index 37eda6a..d41cbbb 100644
+--- a/Source/Windows/UnixLib/CMakeLists.txt
++++ b/Source/Windows/UnixLib/CMakeLists.txt
+@@ -6,7 +6,9 @@ include(GNUInstallDirs)
+ function(CreateLib TargetName LibName)
+   add_library(${TargetName} SHARED FEXUnixLib.cpp)
+   set_target_properties(${TargetName} PROPERTIES OUTPUT_NAME ${LibName} PREFIX "lib" SUFFIX ".so")
+-  target_link_libraries(${TargetName} PRIVATE rt)
++  if (NOT APPLE)
++    target_link_libraries(${TargetName} PRIVATE rt)
++  endif()
+   install(TARGETS ${TargetName} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime)
+ endfunction()
+ 
+diff --git a/Source/Windows/UnixLib/FEXUnixLib.cpp b/Source/Windows/UnixLib/FEXUnixLib.cpp
+index 8adef59..34afa53 100644
+--- a/Source/Windows/UnixLib/FEXUnixLib.cpp
++++ b/Source/Windows/UnixLib/FEXUnixLib.cpp
+@@ -4,7 +4,16 @@
+ #include <fcntl.h>
+ #include <string>
+ #include <sys/mman.h>
++#ifdef __APPLE__
++#include <mach/mach_traps.h>
++#include <mach/kern_return.h>
++// macOS has no prctl. The handlers that need it say so before they get to it.
++static inline int prctl(int, ...) {
++  return -1;
++}
++#else
+ #include <sys/prctl.h>
++#endif
+ #include <unistd.h>
+ 
+ #include "FEXUnixLib.h"
+@@ -47,6 +56,10 @@ constexpr NTSTATUS STATUS_INTERNAL_ERROR = 0xC00000E5;
+ 
+ static NTSTATUS FEXUnixLib_SetHardwareTSOControlHandler(void* _Args) {
+   auto Args = reinterpret_cast<const FEXUnixLib_SetHardwareTSOControlArgs*>(_Args);
++#ifdef __APPLE__
++  // macOS 26.5 switches the calling thread only, new threads start without it.
++  return thread_set_x86_64_compat(Args->Enable ? 1 : 0) == KERN_SUCCESS ? STATUS_SUCCESS : STATUS_NOT_SUPPORTED;
++#endif
+   if (Args->Enable) {
+     int ret = prctl(PR_GET_MEM_MODEL, 0, 0, 0, 0);
+     if (ret == PR_SET_MEM_MODEL_DEFAULT) {
+@@ -61,6 +74,9 @@ static NTSTATUS FEXUnixLib_SetHardwareTSOControlHandler(void* _Args) {
+ 
+ static NTSTATUS FEXUnixLib_SetKernelUnalignedAtomicControlHandler(void* _Args) {
+   auto Args = reinterpret_cast<const FEXUnixLib_SetKernelUnalignedAtomicControl*>(_Args);
++#ifdef __APPLE__
++  return STATUS_NOT_SUPPORTED;
++#endif
+   return prctl(PR_ARM64_SET_UNALIGN_ATOMIC, Args->Flags, 0, 0, 0) == 0 ? STATUS_SUCCESS : STATUS_NOT_SUPPORTED;
+ }
+ 
+@@ -71,6 +87,9 @@ static NTSTATUS FEXUnixLib_MadviseHandler(void* _Args) {
+ 
+ static NTSTATUS FEXUnixLib_SetVMANameHandler(void* _Args) {
+   auto Args = reinterpret_cast<const FEXUnixLib_SetVMAName*>(_Args);
++#ifdef __APPLE__
++  return STATUS_NOT_SUPPORTED;
++#endif
+   return prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, reinterpret_cast<unsigned long>(Args->Addr), Args->Size, Args->Name) == 0 ?
+            STATUS_SUCCESS :
+            STATUS_INTERNAL_ERROR;
+@@ -101,7 +120,9 @@ static inline void* InitializeSHM(uint32_t MapSize, uint32_t MaxSize) {
+     goto err;
+   }
+ 
++#ifndef __APPLE__
+   prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, reinterpret_cast<void*>(Base), MaxSize, "FEXMem_Misc");
++#endif
+ 
+   // Allocate a small working shared space for now, grow as necessary.
+   {
+diff --git a/Source/Windows/WOW64/Module.cpp b/Source/Windows/WOW64/Module.cpp
+index 8c6b7f7..46d15e2 100644
+--- a/Source/Windows/WOW64/Module.cpp
++++ b/Source/Windows/WOW64/Module.cpp
+@@ -583,6 +583,7 @@ void BTCpuThreadInit() {
+   static constexpr size_t DefaultWow64CS {4};
+   std::scoped_lock Lock(ThreadCreationMutex);
+   FEX::Windows::InitCRTThread();
++  FEX::Windows::UnixLib::ThreadInitHardwareTSO();
+   auto* Thread = CTX->CreateThread();
+ 
+   // Default segment setup.
