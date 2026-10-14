@@ -300,6 +300,11 @@ convert_foreign_prefix() {
        skip && /^\[/ { skip = 0 }
        !skip' "$reg" > "$reg.hadron-new" && mv -f "$reg.hadron-new" "$reg" \
     || { rm -f "$reg.hadron-new"; echo "=== could not reset the WoW64 keys ===" >> "$log" 2>&1 || true; }
+  # Some loaders, CrossOver's among them, refuse system32's builtins of the other
+  # architecture before the update can replace them, kernel32.dll first. Wine's own
+  # builtins carry a marker and the update installs them again; a game's DLLs stay.
+  grep -rl --null -a -E 'Wine (builtin|placeholder) DLL' "$WINEPREFIX/drive_c/windows/system32" 2>/dev/null \
+    | xargs -0 rm -f 2>/dev/null || true
   printf '0\n' > "$WINEPREFIX/.update-timestamp" 2>/dev/null || true
 }
 
