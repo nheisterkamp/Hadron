@@ -1,6 +1,7 @@
 /* Checks which d3d11 a game gets through HADRON_DLL_OVERLAY: DXMT loads winemetal.dll,
- * DXVK loads Vulkan, and Wine's own d3d11 (on OpenGL here) loads neither.
- * Prints "dxmt", "dxvk" or "wine" and whether a hardware device could be created. Exit
+ * DXVK loads Vulkan, D3DMetal's d3d11 exports no D3D11CoreCreateDevice, and Wine's own
+ * d3d11 (on OpenGL here) is none of those.
+ * Prints "dxmt", "dxvk", "d3dmetal" or "wine" and whether a hardware device could be created. Exit
  * 0 when the device was created. Build with mingw for x86_64, run with the runtime's wine. */
 
 #include <windows.h>
@@ -28,7 +29,8 @@ int main(void)
     hr = create ? create(NULL, 1, NULL, 0, NULL, 0, 7, &device, &level, &context) : E_FAIL;
     /* Checked after the device exists, since DXVK loads Vulkan only then. */
     printf("d3d11: %s\n", GetModuleHandleA("winemetal.dll") ? "dxmt"
-           : GetModuleHandleA("vulkan-1.dll") || GetModuleHandleA("winevulkan.dll") ? "dxvk" : "wine");
+           : GetModuleHandleA("vulkan-1.dll") || GetModuleHandleA("winevulkan.dll") ? "dxvk"
+           : !GetProcAddress(d3d11, "D3D11CoreCreateDevice") ? "d3dmetal" : "wine");
     printf("D3D11CreateDevice: hr=%#lx feature level %#x\n", (unsigned long)hr, level);
     return SUCCEEDED(hr) ? 0 : 1;
 }

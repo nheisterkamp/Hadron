@@ -18,7 +18,7 @@
 # Homebrew. PKG_CONFIG_LIBDIR is pinned to DEPS so configure cannot pick up the wrong arch.
 #
 # An arm64 runtime needs macOS 26.5. Its loader maps over a large PAGEZERO and starts
-# itself with 4K pages (patch 0005), which only a process signed with the
+# itself with 4K pages (patch 0004 in patches/wine-11.19-arm64), which only a process signed with the
 # com.apple.developer.cross-architecture-support entitlement may do, and an entitlement
 # like that only holds for the main executable of an app bundle with a provisioning
 # profile, and the kernel kills it at launch when it is signed by a certificate the
@@ -54,6 +54,8 @@ STAGING_COMMIT=""
 # another runtime to take them from, for a Wine too old to build them.
 COMPONENTS_FROM=""
 ARCH=x86_64
+# yes for a Wine with CodeWeavers' D3DMetal glue, see where D3DMetal is staged.
+D3DMETAL=""
 # shellcheck disable=SC1090
 . "$definition"
 [ "$RUNTIME_ID" = "$1" ] || die "$definition names itself $RUNTIME_ID"
@@ -212,11 +214,6 @@ prepare_source() {
         | sed 's|^\./||' | sort -u); do
         patch="$here/patches/$name"
         [ -f "$here/patches/$RUNTIME_ID/$name" ] && patch="$here/patches/$RUNTIME_ID/$name"
-        # An override without a diff says why this Wine needs none.
-        if ! grep -q '^diff ' "$patch"; then
-            echo "==> skipping ${patch##*/}: $(sed 's/^# *//' "$patch")"
-            continue
-        fi
         echo "==> applying ${patch#"$here"/patches/}"
         git -C "$WINE_SRC" apply "$patch" || die "${patch##*/} does not apply to $RUNTIME_ID"
     done
@@ -488,15 +485,21 @@ for pair in $backends; do
     cp "$renderers/$from/LICENSE" "$renderers/$from/version" "$OUT/lib/graphics/$name/"
 done
 
-# D3DMetal, Apple's D3D11/12 on Metal from the Game Porting Toolkit, through the glue in
-# patch 0004. Its DLLs are marked builtin already. The unix modules find libd3dshared
-# beside them, and libd3dshared finds D3DMetal.framework beside itself.
-if [ "$ARCH" = x86_64 ]; then
+# D3DMetal, Apple's D3D11/12 on Metal from the Game Porting Toolkit. It needs the glue
+# CodeWeavers keeps in their Wine, and it calls its unix code straight from Windows code,
+# which only works in a Wine that leaves %gs alone on macOS, as theirs does and upstream
+# Wine no longer does. So only a runtime with D3DMETAL=yes gets it. Its DLLs are marked
+# builtin already. Its unix modules are one library under six names, which have to stay
+# links to it so they load as one image with shared state.
+if [ "$D3DMETAL" = yes ]; then
 echo "==> adding D3DMetal under lib/graphics/d3dmetal"
 d3dmetal="$renderers/d3dmetal"
 mkdir -p "$OUT/lib/graphics/d3dmetal/x86_64-windows" "$OUT/lib/graphics/d3dmetal/x86_64-unix"
 cp "$d3dmetal"/wine/x86_64-windows/*.dll "$OUT/lib/graphics/d3dmetal/x86_64-windows/"
-cp "$d3dmetal"/wine/x86_64-unix/*.so "$d3dmetal/external/libd3dshared.dylib" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
+cp "$d3dmetal/external/libd3dshared.dylib" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
+for so in "$d3dmetal"/wine/x86_64-unix/*.so; do
+    ln -s libd3dshared.dylib "$OUT/lib/graphics/d3dmetal/x86_64-unix/${so##*/}"
+done
 cp -R "$d3dmetal/external/D3DMetal.framework" "$OUT/lib/graphics/d3dmetal/x86_64-unix/"
 cp "$d3dmetal"/*.rtf "$OUT/lib/graphics/d3dmetal/"
 fi
@@ -547,7 +550,7 @@ if [ "$ARCH" = arm64 ]; then
     cp "$fex/build_unixlib/libarm64ecfex.so" "$fex/build_unixlib/libwow64fex.so" "$OUT/lib/wine/aarch64-unix/"
     cp "$fex/LICENSE" "$OUT/lib/wine/aarch64-windows/FEX-LICENSE"
 
-    # The loader as the main executable of a bundle that carries the profile. Patch 0005
+    # The loader as the main executable of a bundle that carries the profile. The arm64 patch
     # has it look for ntdll.so beside the bundle, in the unix dir.
     profile="${HADRON_PROVISIONING_PROFILE:-}"
     if [ -z "$profile" ]; then

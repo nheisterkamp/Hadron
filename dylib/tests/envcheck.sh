@@ -88,6 +88,12 @@ is "D3D8/9 beside D3DMetal runs on KosmicKrisp" "$np_root/share/vulkan/icd.d/kos
 HADRON_GRAPHICS=dxvk1
 eval "$graphics"
 is "switching away from D3DMetal drops libd3dshared" "" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
+rmdir "$np_root/lib/graphics/d3dmetal"
+HADRON_GRAPHICS=d3dmetal
+eval "$graphics"
+is "d3dmetal falls back to DXMT where the runtime lacks it" "$np_root/lib/graphics/dxmt:$np_root/lib/graphics/d9vk" "${HADRON_DLL_OVERLAY:-}"
+is "and then loads no libd3dshared" "" "${CX_APPLEGPTK_LIBD3DSHARED_PATH:-}"
+mkdir "$np_root/lib/graphics/d3dmetal"
 rm "$np_root/share/vulkan/icd.d/kosmickrisp_icd.json"
 rmdir "$np_root/lib/graphics/dxmt" "$np_root/lib/graphics/d3dmetal" "$np_root/lib/graphics/d9vk" \
   "$np_root/lib/graphics/dxvk" "$np_root/lib/dxmt"
@@ -95,7 +101,7 @@ for wanted in dxmt d3dmetal; do
   unset VK_DRIVER_FILES
   HADRON_GRAPHICS=$wanted HADRON_DDRAW=""
   eval "$graphics"
-  is "$wanted falls back to DXVK 1.10 where the runtime lacks it, as on arm64" "$np_root/lib/graphics/dxvk1" "${HADRON_DLL_OVERLAY:-}"
+  is "$wanted falls back to DXVK 1.10 where DXMT is missing too, as on arm64" "$np_root/lib/graphics/dxvk1" "${HADRON_DLL_OVERLAY:-}"
   is "that fallback runs on MoltenVK" "$np_root/share/vulkan/icd.d/MoltenVK_icd.json" "${VK_DRIVER_FILES:-}"
 done
 HADRON_GRAPHICS=wined3d

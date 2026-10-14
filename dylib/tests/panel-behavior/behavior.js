@@ -95,7 +95,7 @@ for (const form of Object.keys(FORMS)) {
 
   // The value is what the run script reads from HADRON_GRAPHICS.
   const choices = nodes('').find(x => x.type === 'Dropdown').props.rgOptions;
-  t.ok(choices.map(o => o.label).join(',') === "DXMT (Metal),D3DMetal (Apple),DXVK 3.1,DXVK 1.10,WineD3D (Wine's own)",
+  t.ok(choices.map(o => o.label).join(',') === "DXMT (Metal),D3DMetal (CrossOver Wine),DXVK 3.1,DXVK 1.10,WineD3D (Wine's own)",
        `the choices name themselves (${choices.map(o => o.label).join(',')})`);
   t.ok(choices.map(o => o.data).join(',') === 'dxmt,d3dmetal,dxvk,dxvk1,wined3d', 'the values stay as the run script reads them');
 

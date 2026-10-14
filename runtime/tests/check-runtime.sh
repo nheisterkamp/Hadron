@@ -68,6 +68,10 @@ if [ -d "$runtime/lib/graphics/dxmt" ]; then
     check "DXMT comes through the overlay" sh -c \
         "HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxmt' '$wine' overlay64.exe | grep -q '^d3d11: dxmt'"
 fi
+if [ -d "$runtime/lib/graphics/d3dmetal" ]; then
+    check "D3DMetal comes through the overlay" sh -c \
+        "HADRON_DLL_OVERLAY='$runtime/lib/graphics/d3dmetal' CX_APPLEGPTK_LIBD3DSHARED_PATH='$runtime/lib/graphics/d3dmetal/x86_64-unix/libd3dshared.dylib' '$wine' overlay64.exe | grep -q '^d3d11: d3dmetal'"
+fi
 if [ -d "$runtime/lib/graphics/dxvk" ]; then
     check "DXVK 3.1 comes through the overlay on KosmicKrisp" sh -c \
         "VK_DRIVER_FILES='$icd/kosmickrisp_icd.json' HADRON_DLL_OVERLAY='$runtime/lib/graphics/dxvk' '$wine' overlay64.exe | grep -q '^d3d11: dxvk'"

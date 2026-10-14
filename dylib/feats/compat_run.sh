@@ -615,22 +615,26 @@ for np_overlay in $np_overlays; do
   [ -d "$np_dir" ] || continue
   HADRON_DLL_OVERLAY="${HADRON_DLL_OVERLAY:+$HADRON_DLL_OVERLAY:}$np_dir"
 done
-# The arm64 runtimes have neither DXMT nor D3DMetal, so those fall back to DXVK 1.10,
-# which FEX runs, rather than to Wine's own Direct3D.
+# D3DMetal is only in the CrossOver runtime, and the arm64 runtimes have neither DXMT
+# nor D3DMetal. A backend the runtime lacks falls back to DXMT, or to DXVK 1.10 (which FEX
+# runs), rather than to Wine's own Direct3D.
 case "$np_graphics" in
   dxmt|d3dmetal)
     case ":${HADRON_DLL_OVERLAY:-}:" in
       *"/dxmt:"*|*"/d3dmetal:"*) ;;
       *)
-        if [ -d "$np_root/lib/graphics/dxvk1" ]; then
-          HADRON_DLL_OVERLAY="$np_root/lib/graphics/dxvk1${HADRON_DLL_OVERLAY:+:$HADRON_DLL_OVERLAY}"
-          np_overlays="dxvk1 $np_overlays"
-          echo "graphics: $np_graphics is not in this runtime, using DXVK 1.10" >> "$log" 2>&1 || true
-        fi ;;
+        for np_fallback in dxmt dxvk1; do
+          np_dir="$np_root/lib/graphics/$np_fallback"
+          [ -d "$np_dir" ] || continue
+          HADRON_DLL_OVERLAY="$np_dir${HADRON_DLL_OVERLAY:+:$HADRON_DLL_OVERLAY}"
+          np_overlays="$np_fallback $np_overlays"
+          echo "graphics: $np_graphics is not in this runtime, using $np_fallback" >> "$log" 2>&1 || true
+          break
+        done ;;
     esac ;;
 esac
 [ -z "${HADRON_DLL_OVERLAY:-}" ] || export HADRON_DLL_OVERLAY
-# Wine loads libd3dshared early so it can mark native code for Rosetta (patch 0004).
+# CrossOver's Wine loads libd3dshared early so it can mark native code for Rosetta.
 case ":${HADRON_DLL_OVERLAY:-}:" in
   *"/lib/graphics/d3dmetal:"*)
     export CX_APPLEGPTK_LIBD3DSHARED_PATH="$np_root/lib/graphics/d3dmetal/x86_64-unix/libd3dshared.dylib" ;;

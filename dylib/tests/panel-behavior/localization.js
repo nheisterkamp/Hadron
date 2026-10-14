@@ -18,8 +18,8 @@ for (const form of Object.keys(FORMS)) {
       const nodes = walk(render({ details: details('HADRON_GRAPHICS=dxmt %command%') }));
       const dropdowns = nodes.filter(n => n.type === 'Dropdown');
       assert.deepEqual(dropdowns[0].props.rgOptions.map(o => o.label), chinese
-        ? ['DXMT（Metal）', 'D3DMetal（Apple）', 'DXVK 3.1', 'DXVK 1.10', 'WineD3D（Wine 自带）']
-        : ['DXMT (Metal)', 'D3DMetal (Apple)', 'DXVK 3.1', 'DXVK 1.10', "WineD3D (Wine's own)"]);
+        ? ['DXMT（Metal）', 'D3DMetal（CrossOver Wine）', 'DXVK 3.1', 'DXVK 1.10', 'WineD3D（Wine 自带）']
+        : ['DXMT (Metal)', 'D3DMetal (CrossOver Wine)', 'DXVK 3.1', 'DXVK 1.10', "WineD3D (Wine's own)"]);
       assert(nodes.some(n => n.type === 'Toggle' && n.props.label === (chinese
         ? 'cnc-ddraw（旧版 DirectDraw 游戏）' : 'cnc-ddraw (old DirectDraw games)')));
       assert.equal(dropdowns[1].props.rgOptions[0].label, chinese ? '关闭' : 'Off');

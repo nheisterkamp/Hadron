@@ -228,7 +228,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"2.0\",label:\"2x\"}," \
     "{data:\"3.0\",label:\"3x\"}]," \
     "B=[{data:\"dxmt\",label:npL(\"DXMT (Metal)\",\"DXMT（Metal）\")}," \
-    "{data:\"d3dmetal\",label:npL(\"D3DMetal (Apple)\",\"D3DMetal（Apple）\")}," \
+    "{data:\"d3dmetal\",label:npL(\"D3DMetal (CrossOver Wine)\",\"D3DMetal（CrossOver Wine）\")}," \
     "{data:\"dxvk\",label:\"DXVK 3.1\"}," \
     "{data:\"dxvk1\",label:\"DXVK 1.10\"}," \
     "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own)\",\"WineD3D（Wine 自带）\")}];" \
