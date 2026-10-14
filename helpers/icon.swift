@@ -7,45 +7,42 @@ let canvas: CGFloat = 1024
 let center = CGPoint(x: canvas / 2, y: canvas / 2)
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
 let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
-let coverage: CGFloat = 0.90
+let coverage: CGFloat = 0.82
 
-let orbitRadiusX: CGFloat = 492
-let orbitRadiusY: CGFloat = 95
-let strokeWidth: CGFloat = 38
-let knockoutGap: CGFloat = 22
-let ringOuterRadius: CGFloat = 219
-let ringBand: CGFloat = 48
-let coreRadius: CGFloat = 137
-let orbitAngle: CGFloat = -21
-let orbitShiftY: CGFloat = -44
+// A hadron: three quarks, one of each colour charge, bound by a Y-shaped gluon string
+// inside the hadron's boundary.
+let bagRadius: CGFloat = 430
+let bagWidth: CGFloat = 46
+let quarkOrbit: CGFloat = 228
+let quarkRadius: CGFloat = 118
+let stringWidth: CGFloat = 54
+let junctionRadius: CGFloat = 58
+let quarkAngles: [CGFloat] = [90, 210, 330]
 
 enum Element: String, CaseIterable {
-    case orbitBack = "Orbit Back"
-    case sphereRing = "Sphere Ring"
-    case sphereCore = "Sphere Core"
-    case orbitFront = "Orbit Front"
+    case bag = "Bag"
+    case strings = "Strings"
+    case quarkRed = "Quark Red"
+    case quarkGreen = "Quark Green"
+    case quarkBlue = "Quark Blue"
 
     var fileName: String {
         rawValue.lowercased().replacingOccurrences(of: " ", with: "-") + ".png"
     }
 
-    var depth: Double {
+    var fill: String {
         switch self {
-        case .orbitBack: 0.40
-        case .sphereRing: 0.70
-        case .sphereCore: 0.90
-        case .orbitFront: 1.00
+        case .bag, .strings: "srgb:1.00000,1.00000,1.00000,1.00000"
+        case .quarkRed: "srgb:1.00000,0.27059,0.34118,1.00000"
+        case .quarkGreen: "srgb:0.18824,0.85882,0.48627,1.00000"
+        case .quarkBlue: "srgb:0.25098,0.58824,1.00000,1.00000"
         }
     }
+}
 
-    var translucency: Double {
-        switch self {
-        case .orbitBack: 0.30
-        case .sphereRing: 0.35
-        case .sphereCore: 0.50
-        case .orbitFront: 0.30
-        }
-    }
+func quarkCenter(_ index: Int) -> CGPoint {
+    let angle = quarkAngles[index] * .pi / 180
+    return CGPoint(x: center.x + quarkOrbit * cos(angle), y: center.y + quarkOrbit * sin(angle))
 }
 
 func makeContext(size: CGFloat) -> CGContext {
@@ -72,75 +69,30 @@ func circle(_ radius: CGFloat) -> CGRect {
     )
 }
 
-func orbitFrame() -> CGAffineTransform {
-    CGAffineTransform(translationX: center.x, y: center.y + orbitShiftY)
-        .rotated(by: orbitAngle * .pi / 180)
-}
-
-func orbitPath() -> CGPath {
-    var transform = orbitFrame()
-    let box = CGRect(
-        x: -orbitRadiusX,
-        y: -orbitRadiusY,
-        width: orbitRadiusX * 2,
-        height: orbitRadiusY * 2
-    )
-    return CGPath(ellipseIn: box, transform: &transform)
-}
-
-func halfPlane(front: Bool) -> CGPath {
-    let big = canvas * 2
-    let overlap: CGFloat = 6
-    let rect = front
-        ? CGRect(x: -big, y: -big, width: big * 2, height: big + overlap)
-        : CGRect(x: -big, y: -overlap, width: big * 2, height: big + overlap)
-    var transform = orbitFrame()
-    return CGPath(rect: rect, transform: &transform)
-}
-
-func strokeHalf(front: Bool, into context: CGContext) {
-    context.saveGState()
-    context.addPath(halfPlane(front: front))
-    context.clip()
-    context.setLineWidth(strokeWidth)
-    context.addPath(orbitPath())
-    context.strokePath()
-    context.restoreGState()
-}
-
-func cutNearHalf(from context: CGContext) {
-    context.saveGState()
-    context.addPath(halfPlane(front: true))
-    context.clip()
-    context.setBlendMode(.clear)
-    context.setLineWidth(strokeWidth + knockoutGap * 2)
-    context.addPath(orbitPath())
-    context.strokePath()
-    context.restoreGState()
-}
-
 func draw(_ element: Element, into context: CGContext) {
     context.setStrokeColor(white)
     context.setFillColor(white)
 
     switch element {
-    case .orbitBack:
-        strokeHalf(front: false, into: context)
-        context.setBlendMode(.clear)
-        context.fillEllipse(in: circle(ringOuterRadius + knockoutGap))
-        context.setBlendMode(.normal)
+    case .bag:
+        context.setLineWidth(bagWidth)
+        context.strokeEllipse(in: circle(bagRadius))
 
-    case .sphereRing:
-        context.setLineWidth(ringBand)
-        context.strokeEllipse(in: circle(ringOuterRadius - ringBand / 2))
-        cutNearHalf(from: context)
+    case .strings:
+        context.setLineWidth(stringWidth)
+        context.setLineCap(.round)
+        for index in quarkAngles.indices {
+            context.move(to: center)
+            context.addLine(to: quarkCenter(index))
+        }
+        context.strokePath()
+        context.fillEllipse(in: circle(junctionRadius))
 
-    case .sphereCore:
-        context.fillEllipse(in: circle(coreRadius))
-        cutNearHalf(from: context)
-
-    case .orbitFront:
-        strokeHalf(front: true, into: context)
+    case .quarkRed, .quarkGreen, .quarkBlue:
+        let index = [Element.quarkRed, .quarkGreen, .quarkBlue].firstIndex(of: element)!
+        let at = quarkCenter(index)
+        context.fillEllipse(in: CGRect(x: at.x - quarkRadius, y: at.y - quarkRadius,
+                                       width: quarkRadius * 2, height: quarkRadius * 2))
     }
 }
 
@@ -215,21 +167,27 @@ func write(_ image: CGImage, to url: URL) throws {
     }
 }
 
-func group(for element: Element) -> [String: Any] {
+func layer(_ element: Element) -> [String: Any] {
+    ["fill": ["solid": element.fill], "image-name": element.fileName, "name": element.rawValue]
+}
+
+// Back to front: the boundary, the string, the quarks on top.
+let groups: [(name: String, elements: [Element], depth: Double, translucency: Double)] = [
+    ("Bag", [.bag], 0.40, 0.35),
+    ("Strings", [.strings], 0.70, 0.30),
+    ("Quarks", [.quarkRed, .quarkGreen, .quarkBlue], 1.00, 0.15),
+]
+
+func group(_ entry: (name: String, elements: [Element], depth: Double, translucency: Double)) -> [String: Any] {
     [
         "blur-material": NSNull(),
-        "layers": [
-            [
-                "fill": ["solid": "srgb:1.00000,1.00000,1.00000,1.00000"],
-                "image-name": element.fileName,
-                "name": element.rawValue,
-            ]
-        ],
+        "layers": entry.elements.map(layer),
+        "name": entry.name,
         "opacity": 1,
-        "refractivity": ["depth": element.depth, "enabled": true, "strength": 0.005],
+        "refractivity": ["depth": entry.depth, "enabled": true, "strength": 0.005],
         "shadow": ["kind": "neutral", "opacity": 0.5],
         "specular": "inside",
-        "translucency": ["enabled": true, "value": element.translucency],
+        "translucency": ["enabled": true, "value": entry.translucency],
     ]
 }
 
@@ -253,11 +211,11 @@ let document: [String: Any] = [
     "features": ["refractivity", "specular-location"],
     "fill": [
         "linear-gradient": [
-            "srgb:0.25882,0.25882,0.26667,1.00000",
-            "srgb:0.12549,0.12549,0.13333,1.00000",
+            "srgb:0.20392,0.17647,0.45098,1.00000",
+            "srgb:0.06667,0.05882,0.17647,1.00000",
         ]
     ],
-    "groups": Element.allCases.map(group(for:)),
+    "groups": groups.reversed().map(group),
     "supported-platforms": ["circles": ["watchOS"], "squares": "shared"],
 ]
 try JSONSerialization
