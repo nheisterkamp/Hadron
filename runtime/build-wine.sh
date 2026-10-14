@@ -163,9 +163,32 @@ UNIX_TO_LIB="@loader_path/../.."
 
 echo "==> runtime $RUNTIME_ID ($RUNTIME_NAME)"
 
+# Every runtime gets patches/*.patch, where patches/<runtime>/ may replace one by
+# name. A patch only in patches/<runtime>/ is for that runtime alone.
+runtime_patches() {
+    for name in $( (cd "$here/patches" && ls ./*.patch; [ -d "$RUNTIME_ID" ] && cd "$RUNTIME_ID" && ls ./*.patch) \
+        | sed 's|^\./||' | sort -u); do
+        if [ -f "$here/patches/$RUNTIME_ID/$name" ]; then
+            echo "$here/patches/$RUNTIME_ID/$name"
+        else
+            echo "$here/patches/$name"
+        fi
+    done
+}
+
 prepare_source() {
     if [ -f "$WINE_SRC/.hadron-prepared" ]; then
         echo "==> source tree ready: $WINE_SRC"
+        # A patch added since the tree was prepared goes on top. One already there
+        # reverses cleanly.
+        for patch in $(runtime_patches); do
+            git -C "$WINE_SRC" apply --reverse --check "$patch" 2>/dev/null && continue
+            echo "==> applying ${patch#"$here"/patches/} to the prepared tree"
+            git -C "$WINE_SRC" apply "$patch" || die "${patch##*/} does not apply to $RUNTIME_ID"
+            if grep -qE '^\+\+\+ b/(configure\.ac|server/protocol\.def)' "$patch"; then
+                ( cd "$WINE_SRC" && autoreconf -f && tools/make_requests )
+            fi
+        done
         return
     fi
     rm -rf "$WINE_SRC"
@@ -208,12 +231,7 @@ prepare_source() {
         echo "==> registering lsteamclient and steam.exe with configure"
         git -C "$WINE_SRC" apply --include=configure.ac "$repo/bridge/register-components.diff"
     fi
-    # Every runtime gets patches/*.patch, where patches/<runtime>/ may replace one by
-    # name. A patch only in patches/<runtime>/ is for that runtime alone.
-    for name in $( (cd "$here/patches" && ls ./*.patch; [ -d "$RUNTIME_ID" ] && cd "$RUNTIME_ID" && ls ./*.patch) \
-        | sed 's|^\./||' | sort -u); do
-        patch="$here/patches/$name"
-        [ -f "$here/patches/$RUNTIME_ID/$name" ] && patch="$here/patches/$RUNTIME_ID/$name"
+    for patch in $(runtime_patches); do
         echo "==> applying ${patch#"$here"/patches/}"
         git -C "$WINE_SRC" apply "$patch" || die "${patch##*/} does not apply to $RUNTIME_ID"
     done

@@ -1,0 +1,154 @@
+From: Hadron
+Subject: winebus.sys: Translate Steam Input's virtual pad on macOS
+
+---
+--- a/dlls/winebus.sys/bus_iohid.c
++++ b/dlls/winebus.sys/bus_iohid.c
+@@ -384,3 +384,135 @@
++/* Steam Input's virtual pad on macOS is an Xbox 360 controller in the layout of the old
++ * 360Controller driver: the D-pad, Start and Back on buttons 9 to 15 and the triggers on Z
++ * and Rz. Read raw, games get its buttons in the wrong order, so it takes winebus's own
++ * gamepad layout, the one xinput reads, and every report is translated into it. */
++static const BYTE xusb_report_descriptor[] =
++{
++    0x05,0x01,0x09,0x05,0xa1,0x01,0x05,0x01,0x09,0x3a,0xa1,0x02,0x75,0x08,0x95,0x02,
++    0x05,0x01,0x09,0x3f,0x09,0x3b,0x81,0x01,0x75,0x01,0x15,0x00,0x25,0x01,0x35,0x00,
++    0x45,0x01,0x95,0x04,0x05,0x09,0x19,0x0c,0x29,0x0f,0x81,0x02,0x75,0x01,0x15,0x00,
++    0x25,0x01,0x35,0x00,0x45,0x01,0x95,0x04,0x05,0x09,0x09,0x09,0x09,0x0a,0x09,0x07,
++    0x09,0x08,0x81,0x02,0x75,0x01,0x15,0x00,0x25,0x01,0x35,0x00,0x45,0x01,0x95,0x03,
++    0x05,0x09,0x09,0x05,0x09,0x06,0x09,0x0b,0x81,0x02,0x75,0x01,0x95,0x01,0x81,0x01,
++    0x75,0x01,0x15,0x00,0x25,0x01,0x35,0x00,0x45,0x01,0x95,0x04,0x05,0x09,0x19,0x01,
++    0x29,0x04,0x81,0x02,0x75,0x08,0x15,0x00,0x26,0xff,0x00,0x35,0x00,0x46,0xff,0x00,
++    0x95,0x02,0x05,0x01,0x09,0x32,0x09,0x35,0x81,0x02,0x75,0x10,0x16,0x00,0x80,0x26,
++    0xff,0x7f,0x36,0x00,0x80,0x46,0xff,0x7f,0x05,0x01,0x09,0x01,0xa1,0x00,0x95,0x02,
++    0x05,0x01,0x09,0x30,0x09,0x31,0x81,0x02,0xc0,0x05,0x01,0x09,0x01,0xa1,0x00,0x95,
++    0x02,0x05,0x01,0x09,0x33,0x09,0x34,0x81,0x02,0xc0,0xc0,0xc0,
++};
++
++static BOOL is_xusb_layout(IOHIDDeviceRef device)
++{
++    CFDataRef data = IOHIDDeviceGetProperty(device, CFSTR(kIOHIDReportDescriptorKey));
++
++    if (!data || CFDataGetLength(data) != sizeof(xusb_report_descriptor)) return FALSE;
++    return !memcmp(CFDataGetBytePtr(data), xusb_report_descriptor, sizeof(xusb_report_descriptor));
++}
++
++static void handle_xusb_report(void *context, IOReturn result, void *sender, IOHIDReportType type,
++                               uint32_t reportID, uint8_t *report, CFIndex report_length)
++{
++    /* Bits 0 to 7 of each byte, as winebus gamepad buttons: D-pad up, down, left, right,
++     * Start, Back, left and right stick, then LB, RB, Guide, none, A, B, X and Y. */
++    static const int low[8] = {10, 12, 13, 11, 7, 6, 8, 9};
++    static const int high[8] = {4, 5, 16, -1, 0, 1, 2, 3};
++    struct unix_device *iface = (struct unix_device *)context;
++    struct hid_device_state *state = &iface->hid_device_state;
++    BYTE dpad;
++    int i;
++
++    if (report_length < 14) return;
++
++    for (i = 0; i < 8; i++)
++    {
++        hid_device_set_button(iface, low[i], (report[2] >> i) & 1);
++        if (high[i] >= 0) hid_device_set_button(iface, high[i], (report[3] >> i) & 1);
++    }
++    dpad = report[2];
++    hid_device_set_hatswitch_x(iface, 0, ((dpad >> 3) & 1) - ((dpad >> 2) & 1));
++    hid_device_set_hatswitch_y(iface, 0, ((dpad >> 1) & 1) - (dpad & 1));
++
++    /* The sticks already point up for a positive Y, as XUSB and this layout do. */
++    for (i = 0; i < 4; i++)
++        hid_device_set_abs_axis(iface, i, (SHORT)(report[6 + 2 * i] | (report[7 + 2 * i] << 8)));
++    hid_device_set_abs_axis(iface, 4, report[4] * 32767 / 255);
++    hid_device_set_abs_axis(iface, 5, report[5] * 32767 / 255);
++
++    bus_event_queue_input_report(&event_queue, iface, state->report_buf, state->report_len);
++}
++
++static NTSTATUS xusb_device_start(struct unix_device *iface)
++{
++    struct iohid_device *impl = impl_from_unix_device(iface);
++
++    if (!(impl->buffer = malloc(64))) return STATUS_NO_MEMORY;
++    IOHIDDeviceRegisterInputReportCallback(impl->device, impl->buffer, 64, handle_xusb_report, iface);
++    return STATUS_SUCCESS;
++}
++
++static NTSTATUS xusb_device_haptics_start(struct unix_device *iface, UINT duration_ms,
++                                          USHORT rumble_intensity, USHORT buzz_intensity,
++                                          USHORT left_intensity, USHORT right_intensity)
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++static NTSTATUS xusb_device_haptics_stop(struct unix_device *iface)
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++static NTSTATUS xusb_device_physical_device_control(struct unix_device *iface, USAGE control)
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++static NTSTATUS xusb_device_physical_device_set_gain(struct unix_device *iface, BYTE percent)
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++static NTSTATUS xusb_device_physical_effect_control(struct unix_device *iface, BYTE index,
++                                                    USAGE control, BYTE iterations)
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++static NTSTATUS xusb_device_physical_effect_update(struct unix_device *iface, BYTE index,
++                                                   struct effect_params *params)
++{
++    return STATUS_NOT_SUPPORTED;
++}
++
++static const struct hid_device_vtbl xusb_device_vtbl =
++{
++    iohid_device_destroy,
++    xusb_device_start,
++    iohid_device_stop,
++    xusb_device_haptics_start,
++    xusb_device_haptics_stop,
++    xusb_device_physical_device_control,
++    xusb_device_physical_device_set_gain,
++    xusb_device_physical_effect_control,
++    xusb_device_physical_effect_update,
++};
++
++static struct iohid_device *xusb_device_create(void)
++{
++    static const USAGE_AND_PAGE usage = {.UsagePage = HID_USAGE_PAGE_GENERIC, .Usage = HID_USAGE_GENERIC_GAMEPAD};
++    struct iohid_device *impl;
++
++    if (!(impl = hid_device_create(&xusb_device_vtbl, sizeof(struct iohid_device)))) return NULL;
++    if (!hid_device_begin_report_descriptor(&impl->unix_device, &usage)
++            || !hid_device_add_gamepad(&impl->unix_device)
++            || !hid_device_end_report_descriptor(&impl->unix_device))
++    {
++        impl->unix_device.vtbl->destroy(&impl->unix_device);
++        return NULL;
++    }
++    return impl;
++}
++
+ static void handle_DeviceMatchingCallback(void *context, IOReturn result, void *sender, IOHIDDeviceRef IOHIDDevice)
+ {
+     struct device_desc desc =
+@@ -446,4 +578,10 @@
+ 
+-    if (!(impl = raw_device_create(&iohid_device_vtbl, sizeof(struct iohid_device)))) return;
++    if (desc.is_gamepad && is_xusb_layout(IOHIDDevice))
++    {
++        TRACE("dev %p is in the 360Controller layout, translating it\n", IOHIDDevice);
++        impl = xusb_device_create();
++    }
++    else impl = raw_device_create(&iohid_device_vtbl, sizeof(struct iohid_device));
++    if (!impl) return;
+     list_add_tail(&device_list, &impl->unix_device.entry);
+     impl->device = IOHIDDevice;
