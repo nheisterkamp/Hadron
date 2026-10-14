@@ -20,6 +20,8 @@ static void put_panel(const char *body) {
 int main(int argc, char **argv) {
     if (argc >= 2 && (strcmp(argv[1], "component") == 0 || strcmp(argv[1], "statement") == 0)) {
         np_webpatch_set_fallback_tool(argc >= 3 ? argv[2] : NULL);
+        np_webpatch_set_fex_tools((const char *const *)argv + 3,
+                                  argc > 3 ? (size_t)(argc - 3) : 0);
         put_panel(strcmp(argv[1], "component") == 0 ? NP_OPTIONS_COMPONENT
                                                     : NP_OPTIONS_STATEMENT);
         return 0;
@@ -36,7 +38,7 @@ int main(int argc, char **argv) {
         fputs(NP_IMAGE_FILES_LABEL, stdout);
         return 0;
     }
-    fputs("usage: emit component|statement [fallback]|migration|compat-hint|"
+    fputs("usage: emit component|statement [fallback [fex-tool...]]|migration|compat-hint|"
           "image-files-label\n", stderr);
     return 2;
 }

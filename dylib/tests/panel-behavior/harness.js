@@ -8,10 +8,9 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
-const CAPS = { '\u0003': 'R0', '\u0004': 'B0' };
-const expand = s => s.replace(/[\u0001-\u0008]/g, c => {
-  if (!(c in CAPS)) throw new Error('payload uses unbound capture ' + c.charCodeAt(0));
-  return CAPS[c];
+const expand = (s, caps) => s.replace(/[\u0001-\u0008\u0013-\u0016]/g, c => {
+  if (!(c in caps)) throw new Error('payload uses unbound capture ' + c.charCodeAt(0));
+  return caps[c];
 });
 
 const mk = (type, props) => ({ type, props });
@@ -21,24 +20,25 @@ const barrel = { XY: 'Section', m: 'Dropdown', Yh: 'Toggle' };
 // The two shapes take the payload in different forms and bind different names, which
 // is the whole of the difference between them.
 const FORMS = {
-  component: { arg: 'component', react: 'i',  barrel: 'c'  },
-  statement: { arg: 'statement', react: 'R0', barrel: 'B0' },
+  component: { react: '\u0004', barrel: '\u0005' },
+  statement: { react: '\u0003', barrel: '\u0004' },
 };
 
-// `fallback` stands in for what the hook sets before the transform.
+// `fallback` and `fexTools` stand in for what the hook sets before the transform.
 function panel(emit, form, globals = { document: { documentElement: { lang: 'en' } } },
-               { fallback = 'hadron' } = {}) {
-  const raw = execFileSync(emit, [form, fallback], { encoding: 'utf8' }).trim();
-  const src = form === 'component'
-    ? 'var ' + raw.replace(/,$/, '')
-    : expand(raw).replace(/;$/, '');
+               { fallback = 'hadron', fexTools = [], names = ['R0', 'B0'] } = {}) {
+  const raw = execFileSync(emit, [form, fallback, ...fexTools], { encoding: 'utf8' }).trim();
   const f = FORMS[form];
+  const body = expand(raw, { [f.react]: names[0], [f.barrel]: names[1] });
+  const src = form === 'component' ? 'var ' + body.replace(/,$/, '') : body.replace(/;$/, '');
   const written = [];
   const SteamClient = {
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
   };
-  const build = new Function(f.react, f.barrel, 'SteamClient', 'globalThis', src + '\nreturn NPHadronOpts;');
-  return { render: build(react, barrel, SteamClient, globals), written };
+  const build = new Function(names[0], names[1], 'SteamClient', 'globalThis',
+    src + '\nreturn { NPHadronOpts, NPHadronPick: typeof NPHadronPick === "function" ? NPHadronPick : null };');
+  const { NPHadronOpts, NPHadronPick } = build(react, barrel, SteamClient, globals);
+  return { render: NPHadronOpts, pick: NPHadronPick, written };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the

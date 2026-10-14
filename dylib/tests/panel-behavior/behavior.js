@@ -119,6 +119,11 @@ for (const form of Object.keys(FORMS)) {
   t.ok(css.length === 1 && css[0].props.children.includes('.NPHadronPanel .NPHadronRow{'),
        'the panel carries one stylesheet defining the row rule');
 
+  const { render: S } = panel(emit, form, undefined, { names: ['o', 't'] });
+  const shadowed = walk(S({ details: details('HADRON_GRAPHICS=dxvk1 %command%') }));
+  t.ok(JSON.stringify(shadowed) === JSON.stringify(nodes('HADRON_GRAPHICS=dxvk1')),
+       'a page naming its runtime and barrel o and t renders the same panel');
+
   failed += t.failed;
 }
 console.log(failed ? `\n${failed} failure(s)` : '\nboth shapes pass');

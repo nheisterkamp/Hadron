@@ -148,6 +148,21 @@ struct PayloadStateTests {
         #expect(!broken.isComplete)
     }
 
+    @Test("Only what Install stages makes Steam need repair")
+    func steamCompletenessIgnoresRunnerFiles() {
+        let valve = PayloadEntry(origin: .valve, path: "steamclient64.dll")
+        let built = PayloadEntry(origin: .built, path: "x86_64-unix/lsteamclient.so")
+
+        #expect(state(missing: [valve]).isSteamComplete)
+        #expect(!state(missing: [valve]).isComplete)
+        #expect(!state(missing: [built]).isSteamComplete)
+        #expect(!state(overlay: false).isSteamComplete)
+        #expect(!state(signatures: nil).isSteamComplete)
+        #expect(!state(problem: "the manifest will not parse").isSteamComplete)
+        #expect(state(missing: [built, valve], overlay: false).missingSteamFiles
+            == ["x86_64-unix/lsteamclient.so", "overlay-shim.dylib"])
+    }
+
     @Test("Missing entries are reported per origin")
     func splitsMissingByOrigin() {
         let built = PayloadEntry(origin: .built, path: "x86_64-unix/lsteamclient.so")

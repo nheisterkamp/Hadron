@@ -8,6 +8,9 @@ all of its Steam integration is NotProton's work. NotProton is built around a co
 Wine distribution and deliberately supports only that, so please report problems with
 Hadron here, not there.
 
+It follows the Steam client versions NotProton supports, currently the stable client
+(version 1791918634) and the beta (version 1791686101).
+
 ## How it works
 
 - **Steam Play in macOS Steam.** A dylib injected into the Steam client enables the

@@ -128,6 +128,41 @@ for arg in "$@"; do
   case "$arg" in DXMT_CONFIG=*) forwarded=${arg#*=} ;; UNRELATED_SETTING=*) forwarded=unrelated ;; esac
 done
 is "the game launcher receives DXMT settings as one argument" "d3d11.metalSpatialUpscaleFactor=2.0" "$forwarded"
+# macOS sed stops at the first invalid UTF-8 value.
+# shellcheck disable=SC2016 # The stub and loop expand inside the child shell.
+after_bad=$(env -i PATH="$PATH" LANG=en_US.UTF-8 DXVK_HUD=1 sh -c '
+  env() { printf "A_BAD=a\377b\nDXVK_HUD=1\n"; }
+  f=$1; set --; eval "$f"; printf "%s " "$@"' sh "$forward")
+is "settings after a non-UTF-8 value are forwarded" "--env DXVK_HUD=1 " "$after_bad"
+
+echo "== Rosetta-only settings on arm64 Wine =="
+drop=$(sed -n '/^np_dropped=""$/,/^fi$/p' "$SRC")
+[ -n "$drop" ] || { echo "FAIL: the arm64 settings block was not found"; exit 1; }
+drop_at=$(grep -n '^np_dropped=""$' "$SRC" | cut -d: -f1)
+# shellcheck disable=SC2016 # Match the literal launcher loop.
+forward_at=$(grep -n '^for name in $(env ' "$SRC" | cut -d: -f1)
+[ "$drop_at" -lt "$forward_at" ] ||
+  bad "the arm64 settings block runs before the forwarding loop" "< $forward_at" "$drop_at"
+seen() { sh -c 'env | sed -nE "s/^(HADRON_GRAPHICS|D3DM_[A-Z0-9_]*|DXMT_[A-Z0-9_]*|ROSETTA_[A-Z0-9_]*)=.*/\1/p" | sort | tr "\n" " "'; }
+for name in $(seen); do unset -v "$name"; done
+set_all() { export HADRON_GRAPHICS=dxmt D3DM_ENABLE_METALFX=1 ROSETTA_ADVERTISE_AVX=0 DXMT_CONFIG=x; }
+set_all
+wine_unix="/R R/lib/wine/x86_64-unix"
+eval "$drop"
+is "x86_64 Wine keeps every setting" \
+  "D3DM_ENABLE_METALFX DXMT_CONFIG HADRON_GRAPHICS ROSETTA_ADVERTISE_AVX " "$(seen)"
+is "x86_64 Wine logs nothing" "" "$np_dropped"
+wine_unix="/R R/lib/wine/aarch64-unix"
+eval "$drop"
+is "D3DMetal and Rosetta settings leave the environment" "DXMT_CONFIG HADRON_GRAPHICS " "$(seen)"
+is "the run log names what was ignored" \
+  "D3DM_ENABLE_METALFX ROSETTA_ADVERTISE_AVX" "$np_dropped"
+set_all
+unset -v D3DM_ENABLE_METALFX ROSETTA_ADVERTISE_AVX
+eval "$drop"
+is "other settings stay" "DXMT_CONFIG HADRON_GRAPHICS " "$(seen)"
+is "nothing to ignore logs nothing" "" "$np_dropped"
+unset -v HADRON_GRAPHICS DXMT_CONFIG
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> envcheck: all assertions hold"

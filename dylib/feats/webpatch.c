@@ -13,14 +13,22 @@
 #define NP_C6 "\006"
 #define NP_C7 "\007"
 #define NP_C8 "\010"
-#define NP_CAP_MAX 8
+// 9-12 sit past whitespace and the \021/\022 markers.
+#define NP_C9 "\023"
+#define NP_C10 "\024"
+#define NP_C11 "\025"
+#define NP_C12 "\026"
+#define NP_CAP_MAX 12
 
 // Stands for the name set by np_webpatch_set_fallback_tool.
 #define NP_FALLBACK_TOOL "\021"
+// Stands for the JS array set by np_webpatch_set_fex_tools.
+#define NP_FEX_TOOLS "\022"
 
 #define NP_TOOL_NAME_MAX 128
 
 static _Thread_local char g_fallback_tool[NP_TOOL_NAME_MAX];
+static _Thread_local char g_fex_tools[NP_WEBPATCH_FEX_TOOLS_MAX * (NP_TOOL_NAME_MAX + 3) + 3] = "[]";
 
 typedef struct {
     const char *find;
@@ -36,7 +44,9 @@ static int is_ident_char(unsigned char c) {
 }
 
 static int cap_index(unsigned char c) {
-    return (c >= 1 && c <= NP_CAP_MAX) ? c - 1 : -1;
+    if (c >= (unsigned char)NP_C1[0] && c <= (unsigned char)NP_C8[0]) return c - NP_C1[0];
+    if (c >= (unsigned char)NP_C9[0] && c <= (unsigned char)NP_C12[0]) return c - NP_C9[0] + 8;
+    return -1;
 }
 
 static int is_tool_name(const char *name) {
@@ -54,14 +64,34 @@ void np_webpatch_set_fallback_tool(const char *name) {
         memcpy(g_fallback_tool, name, strlen(name) + 1);
 }
 
+void np_webpatch_set_fex_tools(const char *const *names, size_t count) {
+    size_t n = 0;
+    g_fex_tools[n++] = '[';
+    for (size_t i = 0; i < count && i < NP_WEBPATCH_FEX_TOOLS_MAX; i++) {
+        if (!names[i] || !*names[i] || !is_tool_name(names[i])) continue;
+        size_t len = strlen(names[i]);
+        if (n > 1) g_fex_tools[n++] = ',';
+        g_fex_tools[n++] = '"';
+        memcpy(g_fex_tools + n, names[i], len);
+        n += len;
+        g_fex_tools[n++] = '"';
+    }
+    g_fex_tools[n++] = ']';
+    g_fex_tools[n] = '\0';
+}
+
 static const char *marker_text(char c) {
     if (c == NP_FALLBACK_TOOL[0]) return g_fallback_tool;
+    if (c == NP_FEX_TOOLS[0]) return g_fex_tools;
     return NULL;
 }
 
 static size_t match_at(const char *src, size_t len, size_t pos,
                        const char *find, np_cap_t *caps) {
     for (int i = 0; i < NP_CAP_MAX; i++) { caps[i].at = NULL; caps[i].len = 0; }
+
+    if (cap_index((unsigned char)find[0]) >= 0 && pos &&
+        (is_ident_char((unsigned char)src[pos - 1]) || src[pos - 1] == '.')) return 0;
 
     size_t s = pos;
     for (const char *f = find; *f; f++) {
@@ -79,6 +109,7 @@ static size_t match_at(const char *src, size_t len, size_t pos,
             continue;
         }
 
+        if (s >= len || (src[s] >= '0' && src[s] <= '9')) return 0;
         size_t run = 0;
         while (s + run < len && is_ident_char((unsigned char)src[s + run])) run++;
         if (run == 0) return 0;
@@ -172,6 +203,30 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "const n=G.findIndex(w=>m(w)||!/^[A-Za-z_]\\w*=/.test(o.slice(w.start,w.end)));" \
     "return{p:G[0].start,e:G.slice(0,n<0?G.length:n)}})(),"
 
+// Rewrites KEY=value entries before %command% and leaves the rest of the text byte for byte.
+#define NP_LAUNCH \
+    "(o,id)=>{const " NP_LAUNCH_PARSE \
+    "g=k=>{const p=E.e.filter(w=>o.startsWith(k+\"=\",w.start)).pop();" \
+    "return p?(p.value===null?o.slice(p.start+k.length+1,p.end):p.value.slice(k.length+1)):\"\"}," \
+    "qv=v=>/^[\\w.,:=\\/+@%-]*$/.test(v)?v:\"'\"+v.replace(/'/g,\"'\\\\''\")+\"'\"," \
+    "s=ps=>{const add=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+qv(p[1])).join(\" \");let r;" \
+    "if(!/%command%/i.test(o)){if(!add)return;r=add+\" %command%\"+(o.trim()?\" \"+o:\"\")}" \
+    "else{let at=E.p;r=o.slice(0,at)+(add?add+\" \":\"\");" \
+    "E.e.forEach(w=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",w.start))){" \
+    "r+=o.slice(at,w.start);at=w.end;while(o[at]===\" \"||o[at]===\"\\t\")at++}});r+=o.slice(at)}" \
+    "SteamClient.Apps.SetAppLaunchOptions(id,r.trim()===\"%command%\"?\"\":r)};" \
+    "return{g,s,k:E.e.map(w=>o.slice(w.start,w.end).split(\"=\")[0])}}"
+
+// Picking a FEX tool drops the settings that only mean something under Rosetta: D3DMetal's
+// and the AVX2 advertisement.
+#define NP_PICK \
+    "(t,n)=>{const o=t.strLaunchOptions||\"\";" \
+    "if(" NP_FEX_TOOLS ".indexOf(n)<0||/[<>\\n]|\\$'/.test(o))return;" \
+    "const L=NPHadronLaunch(o,t.unAppID)," \
+    "ks=L.k.filter(k=>/^D3DM_[A-Z0-9_]*$/.test(k)||k===\"ROSETTA_ADVERTISE_AVX\"" \
+    "||k===\"HADRON_GRAPHICS\"&&L.g(k)===\"d3dmetal\");" \
+    "ks.length&&L.s(ks.map(k=>[k,\"\"]))}"
+
 // Hadron options panel. Not in great shape, but it'll do
 #define NP_WEB_IS_ZH \
     "(()=>{const l=(globalThis.document?.documentElement?.lang||" \
@@ -196,24 +251,19 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 // HADRON_GRAPHICS picks the Direct3D backend, unset is dxmt. The DXMT rows go with
 // DXMT, so leaving it clears them. HADRON_DDRAW adds cnc-ddraw for DirectDraw games.
+// A FEX tool runs arm64 Wine, which has DXVK 1.10 and WineD3D only and never runs
+// under Rosetta, so it is offered those and shows the others as the DXVK 1.10 it gets.
 #define NP_OPTIONS_BODY(ARG, RT, BARREL) \
     ARG "=>{" \
     "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
+    "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
     "npZh=" NP_WEB_IS_ZH ",npL=(en,zh)=>npZh?zh:en," \
-    NP_LAUNCH_PARSE \
-    "g=k=>{const p=E.e.filter(w=>o.startsWith(k+\"=\",w.start)).pop();" \
-    "return p?(p.value===null?o.slice(p.start+k.length+1,p.end):p.value.slice(k.length+1)):\"\"}," \
-    "qv=v=>/^[\\w.,:=\\/+@%-]*$/.test(v)?v:\"'\"+v.replace(/'/g,\"'\\\\''\")+\"'\"," \
-    "s=ps=>{const add=ps.filter(p=>p[1]).map(p=>p[0]+\"=\"+qv(p[1])).join(\" \");let r;" \
-    "if(!/%command%/i.test(o)){if(!add)return;r=add+\" %command%\"+(o.trim()?\" \"+o:\"\")}" \
-    "else{let at=E.p;r=o.slice(0,at)+(add?add+\" \":\"\");" \
-    "E.e.forEach(w=>{if(ps.some(p=>o.startsWith(p[0]+\"=\",w.start))){" \
-    "r+=o.slice(at,w.start);at=w.end;while(o[at]===\" \"||o[at]===\"\\t\")at++}});r+=o.slice(at)}" \
-    "SteamClient.Apps.SetAppLaunchOptions(t.unAppID,r.trim()===\"%command%\"?\"\":r)}," \
+    "L=NPHadronLaunch(o,t.unAppID),g=L.g,s=L.s," \
     "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"NPHadronRow\",label:l," \
     "checked:g(ks[0])===on," \
     "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
-    "b=g(\"HADRON_GRAPHICS\")||\"dxmt\"," \
+    "bv=g(\"HADRON_GRAPHICS\")||\"dxmt\"," \
+    "b=fex&&[\"dxmt\",\"d3dmetal\",\"dxvk\"].indexOf(bv)>=0?\"dxvk1\":bv," \
     "dx=\"dxmt\"===b," \
     "sw=\"1\"===g(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
     "F=\"d3d11.metalSpatialUpscaleFactor=\"," \
@@ -231,7 +281,8 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"d3dmetal\",label:npL(\"D3DMetal (CrossOver Wine)\",\"D3DMetal（CrossOver Wine）\")}," \
     "{data:\"dxvk\",label:\"DXVK 3.1\"}," \
     "{data:\"dxvk1\",label:\"DXVK 1.10\"}," \
-    "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own)\",\"WineD3D（Wine 自带）\")}];" \
+    "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own)\",\"WineD3D（Wine 自带）\")}]" \
+    ".filter(x=>!fex||x.data===\"dxvk1\"||x.data===\"wined3d\");" \
     "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
     "&&!t.strCompatToolName)return null;" \
     "return(0," RT ".jsx)(\"div\",{className:\"NPHadronPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
@@ -243,7 +294,7 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "[\"DXMT_CONFIG\",fx(\"\")],[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
     "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\"),\"1\")," \
     "dx&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
-    "T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
+    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\"),\"1\",\"0\")," \
     "T([\"HADRON_RETINA\"],npL(\"High Resolution\",\"高分辨率\"),\"1\",\"0\")," \
     "T([\"HADRON_DDRAW\"],npL(\"cnc-ddraw (old DirectDraw games)\",\"cnc-ddraw（旧版 DirectDraw 游戏）\"),\"cnc-ddraw\")" \
     "]},\"gfx\")," \
@@ -259,12 +310,19 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "\"允许游戏直接读取控制器\"),\"1\",\"\")},\"ctl\")" \
     "]})})}"
 
+// The page's names for its runtime and component barrel are captures, so the body takes
+// them through functions and cannot be shadowed by the page's own one-letter names.
+#define NP_OPTIONS_CAPTURE(RT, BARREL) \
+    "((npReact,npUI)=>" NP_OPTIONS_BODY("np", "npReact()", "npUI()") ")(()=>" RT ",()=>" BARREL ")"
+
 #define NP_OPTIONS_COMPONENT \
-    "NPHadronOpts=" NP_OPTIONS_BODY("e", "i", "c") ","
+    "NPHadronLaunch=" NP_LAUNCH ",NPHadronPick=" NP_PICK "," \
+    "NPHadronOpts=" NP_OPTIONS_CAPTURE(NP_C4, NP_C5) ","
 
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
 #define NP_OPTIONS_STATEMENT \
-    "var NPHadronOpts=" NP_OPTIONS_BODY("np", NP_C3, NP_C4) ";"
+    "var NPHadronLaunch=" NP_LAUNCH ";" \
+    "var NPHadronOpts=" NP_OPTIONS_CAPTURE(NP_C3, NP_C4) ";"
 
 // 1.0.x saved launch settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \
@@ -297,39 +355,44 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 
 static const np_gate_t g_gates_forcetool[] = {
     // SteamPlay settings section
-    { "function ue(e){return(0,T.CI)()?",
-      "function ue(e){return true?", 1 },
+    { "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".CI)()?",
+      "function " NP_C1 "(" NP_C2 "){return true?", 1 },
     // AppProperties Compatibility tab (app and non-Steam-shortcut variants)
-    { "(0,f.CI)()&&o.push({title:(0,A.we)(\"#AppProperties_CompatibilityPage\")",
-      "true&&o.push({title:(0,A.we)(\"#AppProperties_CompatibilityPage\")", 2 },
+    { "(0," NP_C1 ".CI)()&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")",
+      "true&&" NP_C2 ".push({title:(0," NP_C3 ".we)(\"#AppProperties_CompatibilityPage\")", 2 },
     // Settings page Compatibility entry, keeping the SteamOS exclusion (!rf())
-    { "Compatibility:{visible:t&&(0,f.CI)()&&!(0,f.rf)()",
-      "Compatibility:{visible:t&&true&&!(0,f.rf)()", 1 },
-    { "return(0,i.jsxs)(i.Fragment,{children:[0!=a.length&&(0,i.jsx)(_r,{label:(0,A.we)"
-      "(\"#AppProperties_CompatilibityForceTool\"),checked:g,onChange:C,disabled:!r||0===a.length}),"
-      "g&&a.length>0&&(0,i.jsx)(c.m,{strClassName:K().TopGap,rgOptions:d,"
-      "selectedOption:t.strCompatToolName,onChange:e=>SteamClient.Apps.SpecifyCompatTool"
-      "(t.unAppID,e.data)})]})",
-      "return(0,i.jsxs)(i.Fragment,{children:[0!=a.length&&(0,i.jsx)(_r,{label:(0,A.we)"
-      "(\"#AppProperties_CompatilibityForceTool\"),checked:g,onChange:C,disabled:!r||0===a.length}),"
-      "g&&a.length>0&&(0,i.jsx)(c.m,{strClassName:K().TopGap+\" NPNoBottomGap\",rgOptions:d,"
-      "selectedOption:t.strCompatToolName,onChange:e=>SteamClient.Apps.SpecifyCompatTool"
-      "(t.unAppID,e.data)})]})", 1 },
+    { "Compatibility:{visible:" NP_C1 "&&(0," NP_C2 ".CI)()&&!(0," NP_C2 ".rf)()",
+      "Compatibility:{visible:" NP_C1 "&&true&&!(0," NP_C2 ".rf)()", 1 },
+    { "return(0," NP_C1 ".jsxs)(" NP_C1 ".Fragment,{children:[0!=" NP_C2 ".length&&(0," NP_C1 ".jsx)(" NP_C3 ",{label:(0," NP_C4 ".we)"
+      "(\"#AppProperties_CompatilibityForceTool\"),checked:" NP_C5 ",onChange:" NP_C6 ",disabled:!" NP_C7 "||0===" NP_C2 ".length}),"
+      NP_C5 "&&" NP_C2 ".length>0&&(0," NP_C1 ".jsx)(" NP_C8 ".m,{strClassName:" NP_C9 "().TopGap,rgOptions:" NP_C10 ","
+      "selectedOption:" NP_C11 ".strCompatToolName,onChange:" NP_C12 "=>SteamClient.Apps.SpecifyCompatTool"
+      "(" NP_C11 ".unAppID," NP_C12 ".data)})]})",
+      "return(0," NP_C1 ".jsxs)(" NP_C1 ".Fragment,{children:[0!=" NP_C2 ".length&&(0," NP_C1 ".jsx)(" NP_C3 ",{label:(0," NP_C4 ".we)"
+      "(\"#AppProperties_CompatilibityForceTool\"),checked:" NP_C5 ",onChange:" NP_C6 ",disabled:!" NP_C7 "||0===" NP_C2 ".length}),"
+      NP_C5 "&&" NP_C2 ".length>0&&(0," NP_C1 ".jsx)(" NP_C8 ".m,{strClassName:" NP_C9 "().TopGap+\" NPNoBottomGap\",rgOptions:" NP_C10 ","
+      "selectedOption:" NP_C11 ".strCompatToolName,onChange:" NP_C12 "=>{SteamClient.Apps.SpecifyCompatTool"
+      "(" NP_C11 ".unAppID," NP_C12 ".data);NPHadronPick(" NP_C11 "," NP_C12 ".data)}})]})", 1 },
     // Compatibility page container
-    { "Rt=(0,a.PA)(e=>(0,i.jsxs)(c.nB,{children:[(0,i.jsx)(\"div\",{className:K().HiddenIfNotLast,"
-      "children:(0,A.we)(\"#AppProperties_CompatibilityNoOptions\")}),(0,i.jsx)(It,{...e}),"
-      "(0,i.jsx)(xt,{...e})]}));",
+    { NP_C1 "=(0," NP_C2 ".PA)(" NP_C3 "=>(0," NP_C4 ".jsxs)(" NP_C5
+      ".nB,{children:[(0," NP_C4 ".jsx)(\"div\",{className:" NP_C6
+      "().HiddenIfNotLast,children:(0," NP_C7 ".we)(\"#AppProperties_CompatibilityNoOptions\")}),"
+      "(0," NP_C4 ".jsx)(" NP_C8 ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(" NP_C9
+      ",{..." NP_C3 "})]}));",
       NP_OPTIONS_COMPONENT
-      "Rt=(0,a.PA)(e=>(0,i.jsxs)(c.nB,{children:[(0,i.jsx)(\"div\",{className:K().HiddenIfNotLast,"
-      "children:(0,A.we)(\"#AppProperties_CompatibilityNoOptions\")}),(0,i.jsx)(It,{...e}),"
-      "(0,i.jsx)(xt,{...e}),(0,i.jsx)(NPHadronOpts,{...e})]}));", 1 },
+      NP_C1 "=(0," NP_C2 ".PA)(" NP_C3 "=>(0," NP_C4 ".jsxs)(" NP_C5
+      ".nB,{children:[(0," NP_C4 ".jsx)(\"div\",{className:" NP_C6
+      "().HiddenIfNotLast,children:(0," NP_C7 ".we)(\"#AppProperties_CompatibilityNoOptions\")}),"
+      "(0," NP_C4 ".jsx)(" NP_C8 ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(" NP_C9
+      ",{..." NP_C3 "}),(0," NP_C4 ".jsx)(NPHadronOpts,{..." NP_C3 "})]}));", 1 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
       "get is_invalid_os_type(){return false}", 1 },
     // Reminder banner for 32 bit Mac games
-    { "s.is_invalid_os_type&&(0,n.jsx)(U,{})",
-      "!s.local_per_client_data?.installed&&"
-      "s.most_available_per_client_data?.is_invalid_os_type&&(0,n.jsx)(U,{})", 1 },
-    { "(0,h.we)(\"#GameList_Entry_Invalid_OSType2\")",
+    { NP_C1 ".is_invalid_os_type&&(0," NP_C2 ".jsx)(" NP_C3 ",{})",
+      "!" NP_C1 ".local_per_client_data?.installed&&"
+      NP_C1 ".most_available_per_client_data?.is_invalid_os_type&&"
+      "(0," NP_C2 ".jsx)(" NP_C3 ",{})", 1 },
+    { "(0," NP_C1 ".we)(\"#GameList_Entry_Invalid_OSType2\")",
       NP_COMPAT_HINT, 1 },
 };
 

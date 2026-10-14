@@ -14,9 +14,20 @@ struct PayloadState: Sendable {
     var legacyCompatExpected: Int
     var manifestProblem: String?
 
+    var isSteamComplete: Bool {
+        manifestProblem == nil && missingSteamFiles.isEmpty && signatureDatabase != nil
+    }
+
+    var missingSteamFiles: [String] {
+        var names = missing(origin: .built).map(\.path)
+        if !overlayShimPresent { names.append("overlay-shim.dylib") }
+        if !iconmakerPresent { names.append("iconmaker") }
+        if !appinfoPresent { names.append("appinfo") }
+        return names
+    }
+
     var isComplete: Bool {
-        manifestProblem == nil && missing.isEmpty && overlayShimPresent && iconmakerPresent
-            && appinfoPresent && signatureDatabase != nil
+        isSteamComplete && missing.isEmpty
     }
 
     var isEmpty: Bool {

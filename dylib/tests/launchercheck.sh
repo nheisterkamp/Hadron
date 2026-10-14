@@ -255,5 +255,33 @@ is "no artwork, no icon key" "" "$icon_arg"
 is "no artwork logged" "no icon resolved, launching without one" "$(cat "$log")"
 if [ -d "$np_support/shortcut-icons" ]; then bad "launch leaves shortcut cache alone" "absent" "present"; else ok "launch leaves shortcut cache alone"; fi
 
+echo "== session lasts as long as the shim =="
+session_trap=$(sed -n '/^terminate() {$/,/^trap terminate TERM INT HUP$/p' "$SRC")
+session_wait=$(sed -n '/^open -n -W -a "\$loader_app"/,/^exit \$status$/p' "$SRC")
+[ -n "$session_trap" ] && [ -n "$session_wait" ] || { echo "FAIL: session code not found"; exit 1; }
+{
+  printf 'log=%s\nopen() { sleep "$1"; return "$2"; }\n' "$T/session.log"
+  printf 'kill_wine_prefix() { echo kill >> "%s"; }\n' "$T/session.ev"
+  printf '%s\n' "$session_trap"
+  printf 'set -- "$1" "$2"\nloader_app=x\n'
+  printf '%s\n' "$session_wait" | sed 's/open -n -W -a "\$loader_app" "\$@"/open "$@"/'
+} > "$T/session.sh"
+grep -q '^open "\$@"' "$T/session.sh" || { echo "FAIL: session launch line not rewritten"; exit 1; }
+: > "$T/session.ev"
+start=$(date +%s)
+rc=0; sh "$T/session.sh" 3 7 || rc=$?
+is "the shim's exit status is the session's" 7 "$rc"
+is "the session waits for the shim" yes "$([ $(($(date +%s) - start)) -ge 3 ] && echo yes || echo no)"
+is "the prefix is torn down once" kill "$(cat "$T/session.ev")"
+: > "$T/session.ev"
+start=$(date +%s)
+sh "$T/session.sh" 30 0 & sp=$!
+sleep 1
+kill -TERM "$sp"
+rc=0; wait "$sp" || rc=$?
+is "exit game ends the session" 143 "$rc"
+is "exit game does not wait out the shim" yes "$([ $(($(date +%s) - start)) -lt 5 ] && echo yes || echo no)"
+is "exit game tears the prefix down" yes "$(grep -q kill "$T/session.ev" && echo yes || echo no)"
+
 [ "$fails" -eq 0 ] || { echo "launchercheck: $fails failed"; exit 1; }
 echo "launchercheck: all passed"

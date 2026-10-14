@@ -63,6 +63,62 @@ static void check_fallback(void) {
     np_log_level = saved;
 }
 
+static void check_fex_tools(void) {
+    np_webpatch_set_fex_tools((const char *[]){ "hadron-proton-fex", "bad name", NULL, "",
+                                                "x\"y", "hadron-proton-fex-41069" }, 6);
+    if (strcmp(g_fex_tools, "[\"hadron-proton-fex\",\"hadron-proton-fex-41069\"]") != 0)
+        wrong("the FEX tool array is %s", g_fex_tools);
+
+    np_webpatch_set_fex_tools(NULL, 0);
+    if (strcmp(g_fex_tools, "[]") != 0) wrong("no FEX tools gives %s", g_fex_tools);
+
+    char names[NP_WEBPATCH_FEX_TOOLS_MAX + 1][NP_TOOL_NAME_MAX];
+    const char *list[NP_WEBPATCH_FEX_TOOLS_MAX + 1];
+    for (int i = 0; i <= NP_WEBPATCH_FEX_TOOLS_MAX; i++) {
+        memset(names[i], 'a', NP_TOOL_NAME_MAX - 1);
+        names[i][NP_TOOL_NAME_MAX - 1] = '\0';
+        names[i][0] = (char)('A' + i);
+        list[i] = names[i];
+    }
+    np_webpatch_set_fex_tools(list, NP_WEBPATCH_FEX_TOOLS_MAX + 1);
+    size_t want = 2 + NP_WEBPATCH_FEX_TOOLS_MAX * (NP_TOOL_NAME_MAX + 2) - 1;
+    if (strlen(g_fex_tools) != want || strchr(g_fex_tools, 'A' + NP_WEBPATCH_FEX_TOOLS_MAX))
+        wrong("the longest FEX tool array is %zu bytes, not %zu", strlen(g_fex_tools), want);
+    np_webpatch_set_fex_tools(NULL, 0);
+}
+
+static void check_captures(void) {
+    int seen = 0;
+    for (int c = 1; c < 256; c++) {
+        int ci = cap_index((unsigned char)c);
+        if (ci < 0) continue;
+        seen |= 1 << ci;
+        if (ci >= NP_CAP_MAX || c == ' ' || (c >= '\t' && c <= '\r') || marker_text((char)c))
+            wrong("byte %d reads as capture %d", c, ci + 1);
+    }
+    if (seen != (1 << NP_CAP_MAX) - 1) wrong("captures bound by byte: %#x", seen);
+
+    static const struct { const char *src, *find; size_t want; } cases[] = {
+        { "(0,T.CI)()",  "(0," NP_C1 ".CI)()", 10 },
+        { "(0,9T.CI)()", "(0," NP_C1 ".CI)()", 0 },
+        { "(0,.CI)()",   "(0," NP_C1 ".CI)()", 0 },
+        { "ab.CI",       NP_C1 ".CI",           5 },
+        { "a.b(a)",      NP_C1 ".b(" NP_C1 ")", 6 },
+        { "a.b(c)",      NP_C1 ".b(" NP_C1 ")", 0 },
+    };
+    np_cap_t caps[NP_CAP_MAX];
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *s = cases[i].src;
+        size_t got = match_at(s, strlen(s), 0, cases[i].find, caps);
+        if (got != cases[i].want) wrong("capture case %zu matched %zu bytes, wanted %zu",
+                                        i, got, cases[i].want);
+    }
+    if (match_at("xab.CI", 6, 1, NP_C1 ".CI", caps))
+        wrong("a capture matched from the middle of a name");
+    if (match_at("x.ab.CI", 7, 2, NP_C1 ".CI", caps) || match_at("x?.ab.CI", 8, 3, NP_C1 ".CI", caps))
+        wrong("a capture matched a member");
+}
+
 // Invariants the transform relies on but cannot check at run time. A replacement still
 // holding its own anchor would be found again next pass, and an anchor inside another
 // anchor would make the result depend on table order rather than on the chunk.
@@ -254,7 +310,10 @@ int main(int argc, char **argv) {
     if (argc == 4 && strcmp(argv[1], "--extract") == 0)
         return extract(argv[2], argv[3]);
 
-    if (argc < 2) { selfcheck(); check_fallback(); return g_wrong; }
+    if (argc < 2) {
+        selfcheck(); check_captures(); check_fallback(); check_fex_tools();
+        return g_wrong;
+    }
 
     np_webpatch_set_fallback_tool("hadron-proton-wine");
 

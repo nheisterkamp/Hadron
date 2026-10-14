@@ -5,6 +5,7 @@
 
 #include <dirent.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -833,6 +834,23 @@ void np_compat_register_tools(void *compat_mgr) {
 const char *np_compat_fallback_tool_name(void) {
     load_tool_list_once();
     return g_tool_count > 0 ? g_tools[0].name : TOOL_DIR_NAME;
+}
+
+size_t np_compat_fex_tools(const char **names, size_t max) {
+    load_tool_list_once();
+    size_t n = 0;
+    for (int i = 0; i < g_tool_count; i++) {
+        if (strcmp(g_tools[i].flavor, "fex") != 0) continue;
+        if (n == max) {
+            static atomic_flag warned = ATOMIC_FLAG_INIT;
+            if (!atomic_flag_test_and_set(&warned))
+                NP_WARN("np_compat_fex_tools: more than %zu FEX tools, %s and later "
+                        "are left out", max, g_tools[i].name);
+            break;
+        }
+        names[n++] = g_tools[i].name;
+    }
+    return n;
 }
 
 void *np_compat_registered_tool(void *compat_mgr) {
