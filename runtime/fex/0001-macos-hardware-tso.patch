@@ -87,16 +87,17 @@ index 37eda6a..d41cbbb 100644
  endfunction()
  
 diff --git a/Source/Windows/UnixLib/FEXUnixLib.cpp b/Source/Windows/UnixLib/FEXUnixLib.cpp
-index 8adef59..34afa53 100644
+index 8adef59..3f5cd05 100644
 --- a/Source/Windows/UnixLib/FEXUnixLib.cpp
 +++ b/Source/Windows/UnixLib/FEXUnixLib.cpp
-@@ -4,7 +4,16 @@
+@@ -4,7 +4,17 @@
  #include <fcntl.h>
  #include <string>
  #include <sys/mman.h>
 +#ifdef __APPLE__
 +#include <mach/mach_traps.h>
 +#include <mach/kern_return.h>
++#include <cstdlib>
 +// macOS has no prctl. The handlers that need it say so before they get to it.
 +static inline int prctl(int, ...) {
 +  return -1;
@@ -107,18 +108,26 @@ index 8adef59..34afa53 100644
  #include <unistd.h>
  
  #include "FEXUnixLib.h"
-@@ -47,6 +56,10 @@ constexpr NTSTATUS STATUS_INTERNAL_ERROR = 0xC00000E5;
+@@ -47,6 +57,18 @@ constexpr NTSTATUS STATUS_INTERNAL_ERROR = 0xC00000E5;
  
  static NTSTATUS FEXUnixLib_SetHardwareTSOControlHandler(void* _Args) {
    auto Args = reinterpret_cast<const FEXUnixLib_SetHardwareTSOControlArgs*>(_Args);
 +#ifdef __APPLE__
-+  // macOS 26.5 switches the calling thread only, new threads start without it.
++  // macOS 26.5 switches the calling thread only, new threads start without it. With it
++  // on, Ubisoft Connect's threads deadlock waiting on each other, so FEX keeps to its own
++  // ordering unless HADRON_FEX_HARDWARE_TSO=1 asks for the hardware.
++  {
++    const char* Hardware = getenv("HADRON_FEX_HARDWARE_TSO");
++    if (Args->Enable && !(Hardware && Hardware[0] == '1')) {
++      return STATUS_NOT_SUPPORTED;
++    }
++  }
 +  return thread_set_x86_64_compat(Args->Enable ? 1 : 0) == KERN_SUCCESS ? STATUS_SUCCESS : STATUS_NOT_SUPPORTED;
 +#endif
    if (Args->Enable) {
      int ret = prctl(PR_GET_MEM_MODEL, 0, 0, 0, 0);
      if (ret == PR_SET_MEM_MODEL_DEFAULT) {
-@@ -61,6 +74,9 @@ static NTSTATUS FEXUnixLib_SetHardwareTSOControlHandler(void* _Args) {
+@@ -61,6 +83,9 @@ static NTSTATUS FEXUnixLib_SetHardwareTSOControlHandler(void* _Args) {
  
  static NTSTATUS FEXUnixLib_SetKernelUnalignedAtomicControlHandler(void* _Args) {
    auto Args = reinterpret_cast<const FEXUnixLib_SetKernelUnalignedAtomicControl*>(_Args);
@@ -128,7 +137,7 @@ index 8adef59..34afa53 100644
    return prctl(PR_ARM64_SET_UNALIGN_ATOMIC, Args->Flags, 0, 0, 0) == 0 ? STATUS_SUCCESS : STATUS_NOT_SUPPORTED;
  }
  
-@@ -71,6 +87,9 @@ static NTSTATUS FEXUnixLib_MadviseHandler(void* _Args) {
+@@ -71,6 +96,9 @@ static NTSTATUS FEXUnixLib_MadviseHandler(void* _Args) {
  
  static NTSTATUS FEXUnixLib_SetVMANameHandler(void* _Args) {
    auto Args = reinterpret_cast<const FEXUnixLib_SetVMAName*>(_Args);
@@ -138,7 +147,7 @@ index 8adef59..34afa53 100644
    return prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, reinterpret_cast<unsigned long>(Args->Addr), Args->Size, Args->Name) == 0 ?
             STATUS_SUCCESS :
             STATUS_INTERNAL_ERROR;
-@@ -101,7 +120,9 @@ static inline void* InitializeSHM(uint32_t MapSize, uint32_t MaxSize) {
+@@ -101,7 +129,9 @@ static inline void* InitializeSHM(uint32_t MapSize, uint32_t MaxSize) {
      goto err;
    }
  

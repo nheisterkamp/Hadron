@@ -506,7 +506,8 @@ fi
 
 if [ "$ARCH" = arm64 ]; then
     # FEX at its pin with runtime/fex on top, which lets its unix half switch threads to
-    # hardware TSO on macOS. The builds are incremental, so they run every time.
+    # hardware TSO on macOS when HADRON_FEX_HARDWARE_TSO=1; by default FEX orders memory
+    # itself. The builds are incremental, so they run every time.
     fex="$repo/scratch/fex/$FEX_TAG"
     if [ ! -d "$fex/.git" ]; then
         git clone --quiet --depth 1 --branch "$FEX_TAG" --recurse-submodules --shallow-submodules "$FEX_URL" "$fex"
