@@ -569,7 +569,6 @@ struct StatusView: View {
                 tone: runtimeTone(row),
                 detail: runtimeDetail(row, tools: tools),
                 trailing: row.copy == .ready ? buildSize(row.buildID) : nil,
-                secondaryAction: d3dmetalAction(row),
                 action: runtimeAction(row, prominent: snapshot.runner == .none),
                 menu: runtimeMenu(row)
             )
@@ -581,6 +580,17 @@ struct StatusView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: status.highlightedRow == row.id)
             .id(row.id)
+            if let root = d3dmetalRoot(row) {
+                let added = D3DMetalImport.isPresent(in: root)
+                StatusRow(
+                    title: "D3DMetal",
+                    value: added ? String(localized: "Added") : String(localized: "Not added"),
+                    tone: added ? .ok : .neutral,
+                    detail: added ? String(localized: "Pick it per game in Steam, in the game's Hadron settings.") : nil,
+                    action: added ? nil : d3dmetalAction(row)
+                )
+                .padding(.leading, 20)
+            }
         }
         ForEach(status.unavailableRuntimes) { build in
             StatusRow(
@@ -610,13 +620,13 @@ struct StatusView: View {
         if let version = row.unsupportedVersion {
             return String(localized: "Version \(version) not supported (supported: \(SupportedRunners.versionList))")
         }
-        let build = String(localized: "Build \(SupportedRunners.displayVersion(forID: row.buildID))")
+        // The title already names the build.
         switch row.copy {
-        case .ready: return build
-        case .none: return build + String(localized: ", not set up")
-        case .incomplete: return build + String(localized: ", incomplete")
-        case .damaged: return build + String(localized: ", copy damaged")
-        case .unsupported: return build + String(localized: ", not supported")
+        case .ready: return String(localized: "Set up")
+        case .none: return String(localized: "Not set up")
+        case .incomplete: return String(localized: "Incomplete")
+        case .damaged: return String(localized: "Copy damaged")
+        case .unsupported: return String(localized: "Not supported")
         }
     }
 
@@ -640,29 +650,26 @@ struct StatusView: View {
     // it is on this Mac.
     private func d3dmetalAction(_ row: RuntimeRow) -> StatusAction? {
         guard let root = d3dmetalRoot(row), !D3DMetalImport.isPresent(in: root) else { return nil }
+        let about = String(localized: "D3DMetal runs DirectX 11 and 12 games through Metal. Hadron cannot ship it, so it takes it from CrossOver or the Game Porting Toolkit on this Mac.")
         if let known = D3DMetalImport.knownSources().first {
             return StatusAction(
-                label: String(localized: "Add D3DMetal from \(known.name)"),
-                help: String(localized: "Copy D3DMetal from \(known.name) on this Mac into this runtime."),
+                label: String(localized: "Add from \(known.name)"),
+                help: about,
                 isEnabled: status.isIdle
             ) { Task { await status.addD3DMetal(row, from: known.folder) } }
         }
         return StatusAction(
-            label: String(localized: "Add D3DMetal\u{2026}"),
-            help: String(localized: "Pick CrossOver or the mounted Game Porting Toolkit disk image."),
+            label: String(localized: "Add\u{2026}"),
+            help: about + " " + String(localized: "Pick CrossOver or the mounted Game Porting Toolkit disk image."),
             isEnabled: status.isIdle
         ) { Task { await status.addD3DMetal(row) } }
     }
 
     private func runtimeDetail(_ row: RuntimeRow, tools: [InstalledTool]) -> String? {
         var lines: [String] = []
-        if let root = d3dmetalRoot(row) {
-            lines.append(D3DMetalImport.isPresent(in: root)
-                ? String(localized: "D3DMetal added: pick it for a game in the game's Hadron settings in Steam.")
-                : String(localized: "D3DMetal not added. It runs DirectX 11 and 12 games through Metal. Hadron cannot ship it; take it from CrossOver or Apple's free Game Porting Toolkit."))
-        }
         if row.copy == .ready || row.copy == .incomplete {
-            lines.append(contentsOf: tools.filter { $0.build == row.buildID }.map(\.display))
+            // A tool only needs naming when it is not called what the row is.
+            lines.append(contentsOf: tools.filter { $0.build == row.buildID && $0.display != row.title }.map(\.display))
         }
         if let install = row.install {
             var path = install.root.path(percentEncoded: false)
