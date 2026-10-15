@@ -81,6 +81,18 @@ Proton 9.0. `runtime` builds the Wine runtime, with its patches and tests.
 
 Please read NOTICE for license information.
 
+## Made with AI
+
+Much of what Hadron adds to NotProton was written by Claude, Anthropic's AI model,
+working in Claude Code: the Wine runtime builds and their patches, the macOS port of FEX
+for Apple Silicon, and most of the app's newer features, such as runtime downloads, the
+launch window and the update channel. Niels Heisterkamp directed that work, reviewed it
+and tested it. NotProton's code, which Hadron builds on, is its author's
+own.
+
+The code has tests, and every runtime is checked before it is released, but it has run on
+few machines and games so far. Please report what breaks as an issue.
+
 ## Thanks
 
 NotProton's author, for the project this is built on. And, as NotProton's README puts it,
