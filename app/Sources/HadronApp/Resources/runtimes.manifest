@@ -7,3 +7,4 @@ runtime  wine-11.15  hadron-wine-11.15.tar.xz  461b5820dd0563649fd167f89296b2833
 runtime  wine-staging-11.15  hadron-wine-staging-11.15.tar.xz  10c1d04ee3b28bacfcb47d05b51e203589ce53cf07a17c823989145e3e542d5f  253288448
 runtime  wine-11.19  hadron-wine-11.19.tar.xz  032cca4081af1bcd9f792e8aab697192257f8b99164a36ce96ed4c63e80920c8  250305784
 runtime  crossover-26.3  hadron-crossover-26.3.tar.xz  9d8b3837620587c57ce96da487bc502ef24cd434aaba4a14d80f6b74ac561e53  233920800
+runtime  wine-11.19-fex  hadron-wine-11.19-fex.tar.xz  4a7fcce344fcd61d17b709f008cd898c45973214627714fd5164c5ef05acbd79  150487408

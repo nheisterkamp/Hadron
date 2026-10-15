@@ -21,7 +21,8 @@ for dll in steamclient.dll steamclient64.dll; do
 done
 
 work=$(mktemp -d)
-trap 'WINEPREFIX="$work/pfx" "$runtime/bin/wineserver" -k 2>/dev/null; rm -rf "$work"' EXIT
+# A wineserver that already exited makes -k fail, which set -e would turn into the result.
+trap 'WINEPREFIX="$work/pfx" "$runtime/bin/wineserver" -k 2>/dev/null || true; rm -rf "$work"' EXIT
 x86_64-w64-mingw32-gcc -O1 -o "$work/redirect64.exe" "$here/redirect.c"
 i686-w64-mingw32-gcc -O1 -o "$work/redirect32.exe" "$here/redirect.c"
 x86_64-w64-mingw32-gcc -O1 -o "$work/overlay64.exe" "$here/overlay.c"

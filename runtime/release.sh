@@ -6,8 +6,9 @@
 # Each runtime in out/runtime becomes hadron-<id>.tar.xz in out/release/<tag>, without
 # D3DMetal, which Apple's Game Porting Toolkit licence keeps from being passed on; Hadron
 # adds it from a copy the user has. app/Sources/HadronApp/Resources/runtimes.manifest then
-# names the release and each archive's SHA-256 and size. With --publish the archives go up
-# as GitHub release <tag> of nheisterkamp/Hadron, which needs gh signed in.
+# names the release and each archive's SHA-256 and size; entries for other runtimes in the
+# same release stay. With --publish the archives go up as GitHub release <tag> of
+# nheisterkamp/Hadron, or are added to it when it exists, which needs gh signed in.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -63,17 +64,32 @@ for id in "$@"; do
 done
 rm -rf "${work:?}"
 
+# A runtime added to a release keeps the ones the manifest already lists for it.
+base="https://github.com/$github/releases/download/$tag"
+if grep -q "^base  *$base\$" "$manifest" 2>/dev/null; then
+    kept=$(grep '^runtime ' "$manifest" | while read -r _ id rest; do
+        case " $* " in (*" $id "*) ;; (*) echo "runtime  $id  $rest" ;; esac
+    done)
+    [ -z "$kept" ] || lines="$kept
+$lines"
+fi
+
 {
     echo "# Wine runtimes Hadron downloads, written by runtime/release.sh. Each archive is"
     echo "# fetched from the base, checked against its SHA-256 and unpacked into runtimes/."
     echo
-    echo "base     https://github.com/$github/releases/download/$tag"
+    echo "base     $base"
     echo
     printf '%s' "$lines"
 } > "$manifest"
 echo "==> wrote ${manifest#"$repo"/}"
 
-if [ "$publish" = 1 ]; then
+if [ "$publish" = 1 ] && gh release view "$tag" --repo "$github" >/dev/null 2>&1; then
+    echo "==> adding to release $tag on $github"
+    for id in "$@"; do
+        gh release upload "$tag" --repo "$github" --clobber "$out/hadron-$id.tar.xz"
+    done
+elif [ "$publish" = 1 ]; then
     echo "==> publishing release $tag on $github"
     # The tag goes on the commit the runtimes were built from, not the default branch.
     gh release create "$tag" --repo "$github" --target "$(git -C "$repo" rev-parse HEAD)" \
