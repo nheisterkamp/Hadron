@@ -24,6 +24,9 @@ struct StatusSnapshot: Sendable {
     var orphanedRunners: [String] = []
     var damagedRunners: [String] = []
     var installContent: DeploymentContent.Status = .unchecked
+    // What was installed for Steam last, and when this app's payload was built.
+    var installedBuild: DeploymentContent.Build?
+    var bundledBuiltAt: Int64?
 
     static func capture(bundledVersion: String) -> StatusSnapshot {
         let runner = RunnerStore.state()
@@ -39,7 +42,9 @@ struct StatusSnapshot: Sendable {
             installedRunners: installed,
             orphanedRunners: RunnerStore.orphanedClones(),
             damagedRunners: RunnerStore.damagedClones(),
-            installContent: DeploymentContent.current(version: bundledVersion)
+            installContent: DeploymentContent.current(version: bundledVersion),
+            installedBuild: (try? DeploymentContent.readBuild(at: DeploymentContent.record(beside: SupportPaths.deployedVersion))) ?? nil,
+            bundledBuiltAt: (try? InstallPayload.locate())?.builtAt
         )
     }
 }
@@ -206,6 +211,14 @@ final class SystemStatus {
     }
 
     @ObservationIgnored let downloads = RuntimeDownloadManifest.bundled()
+
+    // Supported runtimes this Mac does not have and no release offers, such as one that
+    // has to be built here first.
+    var unavailableRuntimes: [RunnerBuild] {
+        guard snapshot != nil else { return [] }
+        let present = Set(runtimeRows.map(\.buildID)).union(downloadableRuntimes.map(\.id))
+        return SupportedRunners.all.filter { !present.contains($0.id) }
+    }
 
     @ObservationIgnored private var downloadRun: Task<Void, Never>?
 

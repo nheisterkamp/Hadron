@@ -289,3 +289,29 @@ struct DeploymentContentTests {
         #expect(MachOBuild.unsignedSlices(fat) == nil)
     }
 }
+
+@Suite("Deployment content, signatures")
+struct DeploymentSignatureTests {
+    // A new build signs its binaries again, which changes their bytes but not their code.
+    @Test("A binary signed again with the same code matches only when signatures are ignored")
+    func resignedBinaryMatches() throws {
+        let files = FileManager.default
+        let work = files.temporaryDirectory.appending(path: "resign-\(UUID().uuidString)")
+        try files.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: work) }
+        let source = work.appending(path: "source"), installed = work.appending(path: "installed")
+        try files.copyItem(at: URL(filePath: "/bin/ls"), to: source)
+        try files.copyItem(at: URL(filePath: "/bin/ls"), to: installed)
+        try SteamInstaller.adHocSign(installed)
+        #expect(Digest.sha256IfPresent(source) != Digest.sha256IfPresent(installed))
+
+        let strict = DeploymentContent.File(source: source, destination: installed, name: "x")
+        let lenient = DeploymentContent.File(source: source, destination: installed, name: "x", ignoresSignature: true)
+        #expect(try !strict.matches())
+        #expect(try lenient.matches())
+
+        try files.removeItem(at: installed)
+        try files.copyItem(at: URL(filePath: "/bin/cat"), to: installed)
+        #expect(try !lenient.matches(), "other code is still a difference")
+    }
+}

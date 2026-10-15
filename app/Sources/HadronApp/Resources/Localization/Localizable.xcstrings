@@ -384,18 +384,18 @@
         }
       }
     },
-    "%lld of %lld MB" : {
+    "%lld of %lld MB, %lld%%" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$lld of %2$lld MB"
+            "value" : "%1$lld of %2$lld MB, %3$lld%%"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld / %2$lld MB"
+            "value" : "%1$lld / %2$lld MB，%3$lld%%"
           }
         }
       }
@@ -946,6 +946,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未设置构建版本 %@。"
+          }
+        }
+      }
+    },
+    "Build it with runtime/build-wine.sh and add its folder with Add Wine Runtime…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请用 runtime/build-wine.sh 构建，再通过“添加 Wine 运行环境…”添加其文件夹"
           }
         }
       }
@@ -2043,6 +2053,38 @@
         }
       }
     },
+    "Installed: %@, built %@. This app: %@, built %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Installed: %1$@, built %2$@. This app: %3$@, built %4$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安装：%1$@，构建于 %2$@。此应用：%3$@，构建于 %4$@。"
+          }
+        }
+      }
+    },
+    "Installed: %@. This app: %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Installed: %1$@. This app: %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已安装：%1$@。此应用：%2$@。"
+          }
+        }
+      }
+    },
     "Installing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2439,6 +2481,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无"
+          }
+        }
+      }
+    },
+    "Not available to download yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂不提供下载"
           }
         }
       }

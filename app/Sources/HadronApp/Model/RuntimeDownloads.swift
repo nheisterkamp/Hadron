@@ -77,7 +77,8 @@ enum RuntimeDownloader {
         var detail: String? {
             guard case .downloading(_, let received, let total) = self, total > 0 else { return nil }
             let megabytes = { (bytes: Int64) in Int((Double(bytes) / 1_000_000).rounded()) }
-            return String(localized: "\(megabytes(received)) of \(megabytes(total)) MB")
+            let percent = Int((Double(received) / Double(total) * 100).rounded(.down))
+            return String(localized: "\(megabytes(received)) of \(megabytes(total)) MB, \(percent)%")
         }
     }
 

@@ -430,6 +430,21 @@ struct StatusView: View {
         }
     }
 
+    // Which Hadron is installed for Steam and which this app brings. Builds of the same
+    // version, such as local ones, are told apart by when they were built.
+    private func versionChange() -> String? {
+        guard let installed = status.snapshot?.installedBuild else { return nil }
+        let bundled = AppVersion.bundled
+        if installed.version != bundled {
+            return String(localized: "Installed: \(installed.version). This app: \(bundled).")
+        }
+        guard let built = status.snapshot?.bundledBuiltAt, built != installed.builtAt else { return nil }
+        let when = { (stamp: Int64) in
+            Date(timeIntervalSince1970: TimeInterval(stamp)).formatted(date: .abbreviated, time: .shortened)
+        }
+        return String(localized: "Installed: \(bundled), built \(when(installed.builtAt)). This app: \(bundled), built \(when(built)).")
+    }
+
     @ViewBuilder
     private func installedContentRow(_ content: DeploymentContent.Status, deployment: SteamDeployment, payload: PayloadState) -> some View {
         switch content {
@@ -447,12 +462,14 @@ struct StatusView: View {
             StatusRow(title: "Hadron", value: String(localized: "Could not check installed files."), tone: .warning, detail: reason)
         case .update(let files):
             StatusRow(title: "Hadron", value: String(localized: "Update available."), tone: .warning,
-                      detail: String(localized: "This app includes newer files than those installed for Steam."),
+                      detail: [String(localized: "This app includes newer files than those installed for Steam."),
+                               versionChange()].compactMap { $0 }.joined(separator: "\n"),
                       action: installAction(prominent: true, label: String(localized: "Update")))
                 .help(files.joined(separator: "\n"))
         case .repair(let files):
             StatusRow(title: "Hadron", value: String(localized: "Installed files differ from this build."), tone: .warning,
-                      detail: String(localized: "Restore the files included with this app."),
+                      detail: [String(localized: "Restore the files included with this app."),
+                               versionChange()].compactMap { $0 }.joined(separator: "\n"),
                       action: installAction(prominent: true, label: String(localized: "Repair")))
                 .help(files.joined(separator: "\n"))
         case .unrecorded(let files):
@@ -537,7 +554,7 @@ struct StatusView: View {
     private func runtimeSection(_ snapshot: StatusSnapshot) -> some View {
         let rows = status.runtimeRows
         let downloads = status.downloadableRuntimes
-        if rows.isEmpty, downloads.isEmpty {
+        if rows.isEmpty, downloads.isEmpty, status.unavailableRuntimes.isEmpty {
             StatusRow(
                 title: String(localized: "Wine Runtime"),
                 value: String(localized: "Not found. Supported: \(SupportedRunners.versionList)."),
@@ -563,6 +580,14 @@ struct StatusView: View {
             }
             .animation(.easeInOut(duration: 0.3), value: status.highlightedRow == row.id)
             .id(row.id)
+        }
+        ForEach(status.unavailableRuntimes) { build in
+            StatusRow(
+                title: "Hadron \(build.releaseVersion)",
+                value: String(localized: "Not available to download yet"),
+                tone: .neutral,
+                detail: String(localized: "Build it with runtime/build-wine.sh and add its folder with Add Wine Runtime\u{2026}")
+            )
         }
         ForEach(downloads) { download in
             StatusRow(

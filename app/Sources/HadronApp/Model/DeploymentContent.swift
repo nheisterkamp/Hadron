@@ -18,6 +18,9 @@ enum DeploymentContent {
         let destination: URL
         let name: String
         var allowsResigning = false
+        // A binary signed again with its code unchanged still matches. Every signing
+        // stamps the time, so a new build is never byte for byte the same.
+        var ignoresSignature = false
         var executable = false
         var needsClientStopped = true
 
@@ -30,7 +33,7 @@ enum DeploymentContent {
                 return false
             }
             if Digest.sha256IfPresent(destination) == expected { return true }
-            guard allowsResigning else { return false }
+            guard allowsResigning || ignoresSignature else { return false }
             return try MachOBuild.matchesIgnoringSignature(source, destination)
         }
     }
@@ -151,9 +154,12 @@ enum DeploymentContent {
         var files = [
             File(source: payload.dylib, destination: SupportPaths.Steam.deployedDylib(inBundle: app),
                  name: "hadron.dylib", allowsResigning: true),
-            File(source: payload.overlayShim, destination: overlayShim, name: "overlay-shim.dylib"),
-            File(source: payload.iconmaker, destination: iconmaker, name: "iconmaker", executable: true),
-            File(source: payload.appinfo, destination: appinfo, name: "appinfo", executable: true),
+            File(source: payload.overlayShim, destination: overlayShim, name: "overlay-shim.dylib",
+                 ignoresSignature: true),
+            File(source: payload.iconmaker, destination: iconmaker, name: "iconmaker", ignoresSignature: true,
+                 executable: true),
+            File(source: payload.appinfo, destination: appinfo, name: "appinfo", ignoresSignature: true,
+                 executable: true),
         ]
         files += payload.signatures.map {
             File(source: $0, destination: signatures.appending(path: $0.lastPathComponent),
@@ -165,7 +171,8 @@ enum DeploymentContent {
         }
         for entry in bridgePayload.sources {
             files += entry.bridgePaths.map {
-                File(source: entry.source, destination: bridge.appending(path: $0), name: "bridge/\($0)")
+                File(source: entry.source, destination: bridge.appending(path: $0), name: "bridge/\($0)",
+                     ignoresSignature: $0.hasSuffix(".so"))
             }
         }
         files += tools.map {
