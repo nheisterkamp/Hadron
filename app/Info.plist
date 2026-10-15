@@ -35,5 +35,11 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/nheisterkamp/Hadron/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>Npdd6SBIkPrgRsUnutL9nNHUrqscMH3apyaqhUlcfXE=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

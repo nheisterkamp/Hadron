@@ -66,6 +66,12 @@ takes it from the Game Porting Toolkit or CrossOver on the user's Mac. An Apple 
 runtime is only packed when its loader is signed with a Developer ID profile, since a
 development profile runs on its own devices only.
 
+`app/release.sh` releases Hadron itself: it signs the app and all code in it with
+Developer ID and the hardened runtime, has it notarized, signs the zip for Sparkle and
+adds it to the appcast on the `updates` branch, which Hadron's update checks read.
+`--publish` uploads it as GitHub release `app-<version>`; raise `HADRON_VERSION` in
+`dylib/version.h` for every release.
+
 ## Source layout
 
 The macOS app is in `app`, and the code injected into Steam is in `dylib`.
