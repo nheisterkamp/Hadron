@@ -131,3 +131,31 @@ struct RuntimeDownloadTests {
         #expect(!D3DMetalImport.accepts(try #require(SupportedRunners.build(id: "wine-11.19"))))
     }
 }
+
+// Fetches a real archive from the published release, so it runs only on request:
+// HADRON_LIVE_DOWNLOAD=1 swift test --filter liveRelease
+@Suite("Runtime downloads, live")
+struct LiveRuntimeDownloadTests {
+    @Test("The bundled manifest's release downloads, checks and unpacks",
+          .enabled(if: ProcessInfo.processInfo.environment["HADRON_LIVE_DOWNLOAD"] == "1"))
+    func liveRelease() async throws {
+        let manifest = RuntimeDownloadManifest.bundled()
+        let base = try #require(manifest.base)
+        let download = try #require(manifest.runtimes.min { $0.bytes < $1.bytes })
+        let work = FileManager.default.temporaryDirectory.appending(path: "live-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let seen = Seen()
+        let install = try await RuntimeDownloader.run(download, from: base, into: work.appending(path: "runtimes"),
+                                                      cache: work.appending(path: "cache")) { seen.add($0.label) }
+        #expect(RuntimeSource.runtimeID(atRoot: install.root) == download.id)
+        #expect(seen.labels.contains { $0.contains("%") }, "no progress was reported")
+        print("live: \(download.id) from \(base), \(seen.labels.count) progress labels, last \(seen.labels.last ?? "-")")
+    }
+
+    final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private var all: [String] = []
+        func add(_ label: String) { lock.lock(); all.append(label); lock.unlock() }
+        var labels: [String] { lock.lock(); defer { lock.unlock() }; return all }
+    }
+}
