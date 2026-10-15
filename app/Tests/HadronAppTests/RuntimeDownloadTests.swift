@@ -184,3 +184,21 @@ struct LiveRuntimeDownloadTests {
         var phases: [RuntimeDownloader.Phase] { lock.lock(); defer { lock.unlock() }; return all }
     }
 }
+
+@Suite("D3DMetal sources")
+struct D3DMetalSourceTests {
+    @Test("CrossOver in an Applications folder is found without asking")
+    func findsCrossOver() throws {
+        let files = FileManager.default
+        let home = files.temporaryDirectory.appending(path: "d3dm-home-\(UUID().uuidString)")
+        defer { try? files.removeItem(at: home) }
+        #expect(D3DMetalImport.knownSources(home: home).allSatisfy { $0.folder.path(percentEncoded: false).hasPrefix("/") })
+        let gptk = home.appending(path: "Applications/CrossOver.app/Contents/SharedSupport/CrossOver/lib64/apple_gptk")
+        for dir in ["external/D3DMetal.framework", "wine/x86_64-windows", "wine/x86_64-unix"] {
+            try files.createDirectory(at: gptk.appending(path: dir), withIntermediateDirectories: true)
+        }
+        files.createFile(atPath: gptk.appending(path: "external/libd3dshared.dylib").path(percentEncoded: false), contents: Data())
+        let found = D3DMetalImport.knownSources(home: home).filter { $0.folder.path(percentEncoded: false).hasPrefix(home.path(percentEncoded: false)) }
+        #expect(found.map(\.name) == ["CrossOver"])
+    }
+}

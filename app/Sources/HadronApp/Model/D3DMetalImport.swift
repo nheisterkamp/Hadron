@@ -12,6 +12,24 @@ enum D3DMetalImport {
         build.id.hasPrefix("crossover-")
     }
 
+    // Copies Hadron can take without asking where they are: CrossOver in an Applications
+    // folder, and a mounted Game Porting Toolkit disk image.
+    static func knownSources(home: URL = SupportPaths.home) -> [(name: String, folder: URL)] {
+        var found: [(String, URL)] = []
+        for apps in [URL(filePath: "/Applications"), home.appending(path: "Applications")] {
+            let folder = apps.appending(path: "CrossOver.app/Contents/SharedSupport/CrossOver/lib64/apple_gptk")
+            if looksLikeSource(folder) { found.append(("CrossOver", folder)) }
+        }
+        let volumes = (try? FileManager.default.contentsOfDirectory(atPath: "/Volumes")) ?? []
+        // Apple's disk image mounts as "Evaluation environment for Windows games", so it is
+        // known by its layout, not its name.
+        for volume in volumes.sorted() {
+            let folder = URL(filePath: "/Volumes").appending(path: volume).appending(path: "redist/lib")
+            if looksLikeSource(folder) { found.append(("Game Porting Toolkit", folder)) }
+        }
+        return found
+    }
+
     static func isPresent(in root: URL) -> Bool {
         FileManager.default.fileExists(atPath: target(in: root)
             .appending(path: "x86_64-unix/libd3dshared.dylib").path(percentEncoded: false))

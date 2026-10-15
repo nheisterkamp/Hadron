@@ -263,16 +263,24 @@ final class SystemStatus {
         }
     }
 
-    // Adds D3DMetal from the user's own copy to the runtime folder and its installed copy.
-    func addD3DMetal(_ row: RuntimeRow) async {
+    // Adds D3DMetal from the user's own copy to the runtime folder and its installed copy:
+    // the one given, or one picked.
+    func addD3DMetal(_ row: RuntimeRow, from known: URL? = nil) async {
         guard let build = row.build, D3DMetalImport.accepts(build) else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = String(localized: "Add")
-        panel.message = String(localized: "Select Apple's Game Porting Toolkit, CrossOver, or a folder with D3DMetal in it.")
-        guard panel.runModal() == .OK, let picked = panel.url else { return }
+        let picked: URL
+        if let known {
+            picked = known
+        } else {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.prompt = String(localized: "Add")
+            panel.message = String(localized: "Select CrossOver, the mounted Game Porting Toolkit disk image, or a folder with D3DMetal in it.")
+            panel.directoryURL = URL(filePath: "/Applications")
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            picked = url
+        }
 
         await perform(from: String(localized: "Adding D3DMetal")) { _ in
             try await Task.detached(priority: .userInitiated) {

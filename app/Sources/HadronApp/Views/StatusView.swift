@@ -569,6 +569,7 @@ struct StatusView: View {
                 tone: runtimeTone(row),
                 detail: runtimeDetail(row, tools: tools),
                 trailing: row.copy == .ready ? buildSize(row.buildID) : nil,
+                secondaryAction: d3dmetalAction(row),
                 action: runtimeAction(row, prominent: snapshot.runner == .none),
                 menu: runtimeMenu(row)
             )
@@ -628,8 +629,38 @@ struct StatusView: View {
         }
     }
 
+    // Where D3DMetal goes for a runtime that takes it: the installed copy, else its folder.
+    private func d3dmetalRoot(_ row: RuntimeRow) -> URL? {
+        guard let build = row.build, D3DMetalImport.accepts(build) else { return nil }
+        if row.copy == .ready { return SupportPaths.runnerRoot(forBuild: build.id) }
+        return row.install?.root
+    }
+
+    // Shown on the row itself while D3DMetal is missing, from CrossOver in one click when
+    // it is on this Mac.
+    private func d3dmetalAction(_ row: RuntimeRow) -> StatusAction? {
+        guard let root = d3dmetalRoot(row), !D3DMetalImport.isPresent(in: root) else { return nil }
+        if let known = D3DMetalImport.knownSources().first {
+            return StatusAction(
+                label: String(localized: "Add D3DMetal from \(known.name)"),
+                help: String(localized: "Copy D3DMetal from \(known.name) on this Mac into this runtime."),
+                isEnabled: status.isIdle
+            ) { Task { await status.addD3DMetal(row, from: known.folder) } }
+        }
+        return StatusAction(
+            label: String(localized: "Add D3DMetal\u{2026}"),
+            help: String(localized: "Pick CrossOver or the mounted Game Porting Toolkit disk image."),
+            isEnabled: status.isIdle
+        ) { Task { await status.addD3DMetal(row) } }
+    }
+
     private func runtimeDetail(_ row: RuntimeRow, tools: [InstalledTool]) -> String? {
         var lines: [String] = []
+        if let root = d3dmetalRoot(row) {
+            lines.append(D3DMetalImport.isPresent(in: root)
+                ? String(localized: "D3DMetal added: pick it for a game in the game's Hadron settings in Steam.")
+                : String(localized: "D3DMetal not added. It runs DirectX 11 and 12 games through Metal. Hadron cannot ship it; take it from CrossOver or Apple's free Game Porting Toolkit."))
+        }
         if row.copy == .ready || row.copy == .incomplete {
             lines.append(contentsOf: tools.filter { $0.build == row.buildID }.map(\.display))
         }

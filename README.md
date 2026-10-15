@@ -57,6 +57,25 @@ every backend they ship. Hadron updates itself through Sparkle. Not yet done:
 **Valve Anti-Cheat is not supported.** VAC titles launch in Insecure Mode and cannot
 matchmake.
 
+## Adding D3DMetal
+
+D3DMetal is Apple's translation of DirectX 11 and 12 to Metal, from the Game Porting
+Toolkit. Apple's licence does not let Hadron pass it on, so the CrossOver Wine runtime
+Hadron downloads comes without it. Hadron adds it from a copy on your Mac:
+
+1. Get a copy. Either one works:
+   - **CrossOver:** install it in Applications. The free trial is enough: Hadron copies
+     D3DMetal into its runtime, so the copy stays after the trial ends.
+   - **Game Porting Toolkit:** sign in at
+     [developer.apple.com/download/all](https://developer.apple.com/download/all/) with a
+     free Apple developer account, download the Game Porting Toolkit and open its disk
+     image.
+2. In Hadron's Status page, the CrossOver Wine row says whether D3DMetal is added. Click
+   **Add D3DMetal from CrossOver** (or from the Game Porting Toolkit). With neither
+   installed, **Add D3DMetal…** lets you pick a folder that has it.
+3. In Steam, open the game's Properties, go to Hadron, and pick D3DMetal. A game set to
+   D3DMetal without it added runs with DXMT instead.
+
 ## Building
 
 ```

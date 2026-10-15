@@ -550,6 +550,16 @@
         }
       }
     },
+    "Add D3DMetal from %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 %@ 添加 D3DMetal"
+          }
+        }
+      }
+    },
     "Add D3DMetal from Apple's Game Porting Toolkit or CrossOver on this Mac." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1270,6 +1280,16 @@
         }
       }
     },
+    "Copy D3DMetal from %@ on this Mac into this runtime." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这台 Mac 上 %@ 中的 D3DMetal 复制到此运行环境。"
+          }
+        }
+      }
+    },
     "Copy the Wine runtime" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1396,6 +1416,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已添加 D3DMetal。可在游戏的 Hadron 设置中为该游戏选择它。"
+          }
+        }
+      }
+    },
+    "D3DMetal added: pick it for a game in the game's Hadron settings in Steam." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 D3DMetal：可在 Steam 中该游戏的 Hadron 设置里为游戏选择它。"
+          }
+        }
+      }
+    },
+    "D3DMetal not added. It runs DirectX 11 and 12 games through Metal. Hadron cannot ship it; take it from CrossOver or Apple's free Game Porting Toolkit." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未添加 D3DMetal。它通过 Metal 运行 DirectX 11 和 12 游戏。Hadron 无法随附它；请从 CrossOver 或 Apple 免费的 Game Porting Toolkit 获取。"
           }
         }
       }
@@ -2595,6 +2635,16 @@
         }
       }
     },
+    "Pick CrossOver or the mounted Game Porting Toolkit disk image." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择 CrossOver 或已装载的 Game Porting Toolkit 磁盘映像。"
+          }
+        }
+      }
+    },
     "Prefix" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3225,12 +3275,12 @@
         }
       }
     },
-    "Select Apple's Game Porting Toolkit, CrossOver, or a folder with D3DMetal in it." : {
+    "Select CrossOver, the mounted Game Porting Toolkit disk image, or a folder with D3DMetal in it." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请选择 Apple Game Porting Toolkit、CrossOver，或包含 D3DMetal 的文件夹。"
+            "value" : "请选择 CrossOver、已装载的 Game Porting Toolkit 磁盘映像，或包含 D3DMetal 的文件夹。"
           }
         }
       }
