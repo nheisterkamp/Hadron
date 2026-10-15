@@ -42,6 +42,11 @@ fi
 version=$(sed -n 's/^#define HADRON_VERSION "\(.*\)"/\1/p' "$repo/dylib/version.h")
 [ -n "$version" ] || die "no HADRON_VERSION in dylib/version.h"
 tag="app-$version"
+
+# What changed, from CHANGELOG.md, for the release and for Sparkle's update window.
+notes=$(awk -v v="$version" '$0 == "## " v {on = 1; next} /^## / {on = 0} on' "$repo/CHANGELOG.md" \
+    | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}')
+[ -n "$notes" ] || die "CHANGELOG.md has no section for $version; write what changed first"
 if [ "$mode" = publish ] && gh release view "$tag" --repo "$github" >/dev/null 2>&1; then
     die "release $tag exists; raise HADRON_VERSION in dylib/version.h first"
 fi
@@ -102,11 +107,35 @@ if [ ! -d "$feed/.git" ]; then
 fi
 git -C "$feed" pull --quiet --ff-only origin "$feed_branch" 2>/dev/null || true
 python3 - "$feed/appcast.xml" "$version" "$build" "$minimum" \
-    "https://github.com/$github/releases/download/$tag/Hadron-$version.zip" "$signature" <<'PY'
-import sys, os, email.utils
-path, version, build, minimum, url, signature = sys.argv[1:]
+    "https://github.com/$github/releases/download/$tag/Hadron-$version.zip" "$signature" "$notes" <<'PY'
+import sys, os, re, html, email.utils
+path, version, build, minimum, url, signature, notes = sys.argv[1:]
+
+# The changelog's Markdown as the little HTML Sparkle's window shows: paragraphs, one
+# list, bold and code.
+def inline(text):
+    text = html.escape(text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    return re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+blocks, items, para = [], [], []
+def flush_para():
+    if para: blocks.append("<p>" + inline(" ".join(para)) + "</p>"); para.clear()
+for line in notes.splitlines() + [""]:
+    if line.startswith("- "):
+        flush_para(); items.append(line[2:].strip())
+    elif line.startswith("  ") and items:
+        items[-1] += " " + line.strip()
+    elif not line.strip():
+        flush_para()
+    else:
+        if items: blocks.append("<ul>" + "".join(f"<li>{inline(i)}</li>" for i in items) + "</ul>"); items.clear()
+        para.append(line.strip())
+if items: blocks.append("<ul>" + "".join(f"<li>{inline(i)}</li>" for i in items) + "</ul>")
+description = "".join(blocks)
+
 item = f"""    <item>
       <title>Hadron {version}</title>
+      <description><![CDATA[{description}]]></description>
       <pubDate>{email.utils.formatdate()}</pubDate>
       <sparkle:version>{build}</sparkle:version>
       <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
@@ -133,7 +162,7 @@ echo "==> added $version to $feed/appcast.xml"
 if [ "$mode" = publish ]; then
     echo "==> publishing $tag on $github"
     gh release create "$tag" --repo "$github" --target "$(git -C "$repo" rev-parse HEAD)" \
-        --title "Hadron $version" --notes "Hadron $version. Hadron updates itself to this release through Sparkle." "$zip"
+        --title "Hadron $version" --notes "$notes" "$zip"
     git -C "$feed" add appcast.xml
     git -C "$feed" -c user.name="$(git -C "$repo" config user.name)" -c user.email="$(git -C "$repo" config user.email)" \
         commit --quiet -m "Hadron $version"
