@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Hadron</title>
+    <item>
+      <title>Hadron 1.0.1</title>
+      <pubDate>Thu, 15 Oct 2026 10:43:59 -0000</pubDate>
+      <sparkle:version>1.0.1</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/nheisterkamp/Hadron/releases/download/app-1.0.1/Hadron-1.0.1.zip" type="application/octet-stream" sparkle:edSignature="mPW+2nPqX3mxWpWsZmIzrbtFmkX2BmPOpvDZBxx961cHeISGAJft/aCG9VJeBNqCdjc4sYja7dvVhdoNGCDGAQ==" length="73212059"/>
+    </item>
+  </channel>
+</rss>
