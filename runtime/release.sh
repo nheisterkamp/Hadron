@@ -75,7 +75,9 @@ echo "==> wrote ${manifest#"$repo"/}"
 
 if [ "$publish" = 1 ]; then
     echo "==> publishing release $tag on $github"
-    gh release create "$tag" --repo "$github" --title "Wine runtimes $tag" \
+    # The tag goes on the commit the runtimes were built from, not the default branch.
+    gh release create "$tag" --repo "$github" --target "$(git -C "$repo" rev-parse HEAD)" \
+        --title "Wine runtimes $tag" \
         --notes "Wine runtimes for Hadron, downloaded and checked by the app. Built from the definitions and patches in runtime/ at this tag. D3DMetal is not included." \
         "$out"/hadron-*.tar.xz
 fi
