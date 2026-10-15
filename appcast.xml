@@ -3,6 +3,14 @@
   <channel>
     <title>Hadron</title>
     <item>
+      <title>Hadron 1.0.2</title>
+      <pubDate>Thu, 15 Oct 2026 11:46:29 -0000</pubDate>
+      <sparkle:version>1.0.2</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/nheisterkamp/Hadron/releases/download/app-1.0.2/Hadron-1.0.2.zip" type="application/octet-stream" sparkle:edSignature="9e6LtgCRR7pjB/gihp/oWQpIUHzyShQ/nUUFkPwyGtoaRGVMSm5IfhdOwRHqhfjHZWa3T8q6xPdU1VINU5ARBA==" length="73231633"/>
+    </item>
+    <item>
       <title>Hadron 1.0.1</title>
       <pubDate>Thu, 15 Oct 2026 10:43:59 -0000</pubDate>
       <sparkle:version>1.0.1</sparkle:version>
