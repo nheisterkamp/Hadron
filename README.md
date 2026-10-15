@@ -16,32 +16,43 @@ It follows the Steam client versions NotProton supports, currently the stable cl
 - **Steam Play in macOS Steam.** A dylib injected into the Steam client enables the
   Steam Play support that macOS Steam carries but keeps switched off, and registers
   Hadron as a compatibility tool.
-- **The Wine runtimes.** `runtime/build-wine.sh` builds x86_64 Wine runtimes that run
-  under Rosetta, with lsteamclient, the steam.exe shim, wine-mono and wine-gecko built
-  in. Each runtime is a small definition in `runtime/runtimes`, and each shows up in
-  Steam as its own compatibility tool:
+- **The Wine runtimes.** Hadron downloads them from this repository's releases, or
+  `runtime/build-wine.sh` builds them, with lsteamclient, the steam.exe shim, wine-mono
+  and wine-gecko built in. Each is a small definition in `runtime/runtimes`, and each
+  shows up in Steam as its own compatibility tool:
   - **Wine 11.15**, the default.
   - **Wine Staging 11.15**, with the wine-staging patch set.
   - **Wine 11.19**, the newest development release.
+  - **CrossOver Wine 26.3**, built from CodeWeavers' published source, the one runtime
+    that runs D3DMetal.
+  - **Wine 11.19 for Apple Silicon**, native arm64 Wine that runs x86 games with
+    [FEX](https://github.com/FEX-Emu/FEX) instead of Rosetta. It needs macOS 26.5.
 
-  Three small patches in `runtime/patches` redirect Steam's steamclient to
-  lsteamclient in Wine's loader, name the prefix profile `steamuser` like Proton does,
-  and let a DLL overlay stand in for Wine's own Direct3D.
-- **Graphics.** Direct3D 10/11 goes to Metal through [DXMT](https://github.com/3Shain/dxmt).
-  Vulkan comes from MoltenVK. Each game's Properties in Steam has a Hadron panel to
-  switch it to Wine's own Direct3D instead.
+  A game's prefix moves between the Rosetta and Apple Silicon runtimes in place. The
+  patches in `runtime/patches` redirect Steam's steamclient to lsteamclient in Wine's
+  loader, name the prefix profile `steamuser` like Proton does, let a DLL overlay stand
+  in for Wine's own Direct3D, and hand games Steam Input's virtual controller in the
+  layout XInput expects. `runtime/patches/wine-11.19-fex` ports arm64 Wine to macOS, and
+  `runtime/fex` ports FEX's unix side.
+- **Graphics.** Direct3D 10 and 11 go to Metal through
+  [DXMT](https://github.com/3Shain/dxmt) by default. Each game's Properties in Steam has a
+  Hadron panel to pick DXVK 3.1 on KosmicKrisp, DXVK 1.10 on MoltenVK, D3DMetal (with
+  CrossOver Wine, once added from Apple's Game Porting Toolkit or CrossOver), or Wine's
+  own Direct3D. On Apple Silicon Wine, DXVK 1.10 and Wine's own Direct3D are available.
+- **Starting games.** A small window follows each launch: its steps, the game's Windows
+  processes and logs, and a warning when nothing happens. It can stop the game and save
+  diagnostics.
 
 ## Status
 
-Early. The runtime boots, the steamclient redirect works for 32 and 64 bit games, and
-DXMT creates Direct3D 11 devices. Not yet done:
+Early, but games run. All runtimes boot, reach Steam through lsteamclient for 32 and 64
+bit games, make HTTPS connections through schannel, and create Direct3D 11 devices with
+every backend they ship. Hadron updates itself through Sparkle. Not yet done:
 
-- an arm64 runtime. The runtimes need Rosetta, which Apple drops in macOS 28. Running
-  Wine natively needs Wine patches that are not upstream yet, a macOS port of FEX for
-  the x86 games, which is not public, and Apple entitlements tied to a developer account.
-- Direct3D 12 beyond what Wine's own vkd3d manages on MoltenVK.
-- TLS (schannel) inside Wine, which needs an x86_64 GnuTLS.
-- automatic updates. They are switched off until Hadron publishes signed releases.
+- Direct3D 12 outside D3DMetal goes no further than Wine's own vkd3d manages on MoltenVK.
+- The Apple Silicon runtime is new and starts heavy programs slowly: Ubisoft Connect takes
+  about a minute, against seconds under Rosetta. It is there for when Apple drops
+  Rosetta, in macOS 28.
 
 **Valve Anti-Cheat is not supported.** VAC titles launch in Insecure Mode and cannot
 matchmake.
@@ -69,8 +80,9 @@ development profile runs on its own devices only.
 `app/release.sh` releases Hadron itself: it signs the app and all code in it with
 Developer ID and the hardened runtime, has it notarized, signs the zip for Sparkle and
 adds it to the appcast on the `updates` branch, which Hadron's update checks read.
-`--publish` uploads it as GitHub release `app-<version>`; raise `HADRON_VERSION` in
-`dylib/version.h` for every release.
+`--publish` uploads it as GitHub release `app-<version>`. For every release, raise
+`HADRON_VERSION` in `dylib/version.h` and write what changed in `CHANGELOG.md`, which
+becomes the release notes and the text in Sparkle's update window.
 
 ## Source layout
 
@@ -87,8 +99,7 @@ Much of what Hadron adds to NotProton was written by Claude, Anthropic's AI mode
 working in Claude Code: the Wine runtime builds and their patches, the macOS port of FEX
 for Apple Silicon, and most of the app's newer features, such as runtime downloads, the
 launch window and the update channel. Niels Heisterkamp directed that work, reviewed it
-and tested it. NotProton's code, which Hadron builds on, is its author's
-own.
+and tested it. NotProton's code, which Hadron builds on, is its author's own.
 
 The code has tests, and every runtime is checked before it is released, but it has run on
 few machines and games so far. Please report what breaks as an issue.
