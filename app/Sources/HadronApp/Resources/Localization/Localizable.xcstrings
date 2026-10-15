@@ -384,6 +384,22 @@
         }
       }
     },
+    "%lld of %lld MB" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld MB"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld MB"
+          }
+        }
+      }
+    },
     ", copy damaged" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1644,6 +1660,16 @@
         }
       }
     },
+    "Download stopped." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已停止下载。"
+          }
+        }
+      }
+    },
     "Download this runtime and set up its compatibility tool." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1670,22 +1696,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在下载 %@"
-          }
-        }
-      }
-    },
-    "Downloading %@, %lld%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Downloading %1$@, %2$lld%%"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在下载 %1$@，%2$lld%%"
           }
         }
       }
@@ -3562,6 +3572,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 中已安装的动态库与当前账户的版本记录不一致。请使用上次执行安装的 Hadron 应用完成或修复安装。"
+          }
+        }
+      }
+    },
+    "Stop" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
           }
         }
       }

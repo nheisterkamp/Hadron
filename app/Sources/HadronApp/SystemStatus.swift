@@ -51,6 +51,8 @@ final class SystemStatus {
     var snapshot: StatusSnapshot?
     var isRefreshing = false
     var activity: String?
+    // A determinate step, such as a download, shows a bar instead of a spinner.
+    var activityProgress: (fraction: Double, detail: String)?
     var outcome: String?
     private(set) var highlightedRow: String?
     @ObservationIgnored private var highlightReset: Task<Void, Never>?
@@ -92,6 +94,7 @@ final class SystemStatus {
     func endRun() {
         generation += 1
         activity = nil
+        activityProgress = nil
         AppLog.note("run end\(failure == nil ? "" : " (failed)")")
     }
 
@@ -204,11 +207,38 @@ final class SystemStatus {
 
     @ObservationIgnored let downloads = RuntimeDownloadManifest.bundled()
 
+    @ObservationIgnored private var downloadRun: Task<Void, Never>?
+
+    // The download runs in a task of its own, so Stop can cancel it.
+    func startDownload(_ download: RuntimeDownload) {
+        guard downloadRun == nil else { return }
+        downloadRun = Task {
+            await downloadRuntime(download)
+            downloadRun = nil
+        }
+    }
+
+    func stopDownload() {
+        downloadRun?.cancel()
+    }
+
     // Downloads a runtime and sets up its compatibility tool, as Set Up does for a folder.
     func downloadRuntime(_ download: RuntimeDownload) async {
         guard canInstall, let base = downloads.base else { return }
-        await perform(from: RuntimeDownloader.Phase.downloading(name: download.build?.releaseVersion ?? download.id, fraction: nil).label) { progress in
-            let install = try await RuntimeDownloader.run(download, from: base) { progress($0.label) }
+        await perform(from: RuntimeDownloader.Phase.downloading(name: download.build?.releaseVersion ?? download.id, received: 0, total: download.bytes).label) { progress in
+            let shown = LabelBox()
+            let install: RuntimeInstall
+            do {
+                install = try await RuntimeDownloader.run(download, from: base) { phase in
+                    // The label once per step, the bar on every report.
+                    if shown.swap(phase.label) != phase.label { progress(phase.label) }
+                    let bar = phase.fraction.map { ($0, phase.detail ?? "") }
+                    Task { @MainActor in self.activityProgress = bar }
+                }
+            } catch where Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                AppLog.note("runtime download stopped: \(download.id)")
+                return String(localized: "Download stopped.")
+            }
             AppLog.note("runtime downloaded: \(download.id)")
             let lock = try DeploymentContent.acquireInstallationLock()
             defer { lock.release() }
@@ -607,5 +637,18 @@ final class SystemStatus {
         templateSizes = measured.1
         templateCleanupFailure = measured.2.isEmpty ? nil : measured.2.map(\.detail).joined(separator: "\n")
         bridgeCopyBytes = measured.3
+    }
+}
+
+// The last label a download step showed, from a progress callback on another thread.
+private final class LabelBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var label = ""
+
+    func swap(_ new: String) -> String {
+        lock.lock(); defer { lock.unlock() }
+        let old = label
+        label = new
+        return old
     }
 }

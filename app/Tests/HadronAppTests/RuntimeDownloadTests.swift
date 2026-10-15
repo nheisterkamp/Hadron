@@ -146,16 +146,41 @@ struct LiveRuntimeDownloadTests {
         defer { try? FileManager.default.removeItem(at: work) }
         let seen = Seen()
         let install = try await RuntimeDownloader.run(download, from: base, into: work.appending(path: "runtimes"),
-                                                      cache: work.appending(path: "cache")) { seen.add($0.label) }
+                                                      cache: work.appending(path: "cache")) { seen.add($0) }
         #expect(RuntimeSource.runtimeID(atRoot: install.root) == download.id)
-        #expect(seen.labels.contains { $0.contains("%") }, "no progress was reported")
-        print("live: \(download.id) from \(base), \(seen.labels.count) progress labels, last \(seen.labels.last ?? "-")")
+        // Progress between the start and the end, not only a 0% before it begins.
+        let fractions = seen.phases.compactMap(\.fraction)
+        #expect(fractions.contains { $0 > 0 && $0 < 1 }, "no progress was reported during the download")
+        print("live: \(download.id) from \(base), \(fractions.count) progress reports, last \(seen.phases.last.map(\.label) ?? "-")")
+    }
+
+    @Test("Stopping a download ends it and leaves no runtime behind",
+          .enabled(if: ProcessInfo.processInfo.environment["HADRON_LIVE_DOWNLOAD"] == "1"))
+    func liveStop() async throws {
+        let manifest = RuntimeDownloadManifest.bundled()
+        let base = try #require(manifest.base)
+        let download = try #require(manifest.runtimes.first)
+        let work = FileManager.default.temporaryDirectory.appending(path: "live-stop-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let runtimes = work.appending(path: "runtimes")
+        let seen = Seen()
+        let run = Task {
+            try await RuntimeDownloader.run(download, from: base, into: runtimes, cache: work.appending(path: "cache")) { seen.add($0) }
+        }
+        while !seen.phases.contains(where: { ($0.fraction ?? 0) > 0 }) { try await Task.sleep(for: .milliseconds(100)) }
+        let stopped = Date()
+        run.cancel()
+        let result = await run.result
+        #expect(Date().timeIntervalSince(stopped) < 5, "the download did not stop promptly")
+        #expect((try? result.get()) == nil, "a stopped download returned a runtime")
+        #expect(!FileManager.default.fileExists(atPath: runtimes.appending(path: download.id).path(percentEncoded: false)))
+        print("live stop: \(seen.phases.last?.fraction ?? 0) done when stopped, ended with \(result)")
     }
 
     final class Seen: @unchecked Sendable {
         private let lock = NSLock()
-        private var all: [String] = []
-        func add(_ label: String) { lock.lock(); all.append(label); lock.unlock() }
-        var labels: [String] { lock.lock(); defer { lock.unlock() }; return all }
+        private var all: [RuntimeDownloader.Phase] = []
+        func add(_ phase: RuntimeDownloader.Phase) { lock.lock(); all.append(phase); lock.unlock() }
+        var phases: [RuntimeDownloader.Phase] { lock.lock(); defer { lock.unlock() }; return all }
     }
 }

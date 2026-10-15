@@ -55,20 +55,29 @@ struct RuntimeDownloadManifest: Sendable, Equatable {
 
 enum RuntimeDownloader {
 
-    enum Phase: Sendable {
-        case downloading(name: String, fraction: Double?)
+    enum Phase: Sendable, Equatable {
+        case downloading(name: String, received: Int64, total: Int64)
         case verifying
         case unpacking
 
         var label: String {
             switch self {
-            case .downloading(let name, let fraction?):
-                String(localized: "Downloading \(name), \(Int((fraction * 100).rounded()))%")
-            case .downloading(let name, nil):
-                String(localized: "Downloading \(name)")
+            case .downloading(let name, _, _): String(localized: "Downloading \(name)")
             case .verifying: String(localized: "Checking the download")
             case .unpacking: String(localized: "Unpacking the runtime")
             }
+        }
+
+        // For a progress bar, while the download runs.
+        var fraction: Double? {
+            guard case .downloading(_, let received, let total) = self, total > 0 else { return nil }
+            return min(Double(received) / Double(total), 1)
+        }
+
+        var detail: String? {
+            guard case .downloading(_, let received, let total) = self, total > 0 else { return nil }
+            let megabytes = { (bytes: Int64) in Int((Double(bytes) / 1_000_000).rounded()) }
+            return String(localized: "\(megabytes(received)) of \(megabytes(total)) MB")
         }
     }
 
@@ -97,9 +106,9 @@ enum RuntimeDownloader {
         let archive = cache.appending(path: download.file)
         if Digest.sha256IfPresent(archive) != download.sha256 {
             try? files.removeItem(at: archive)
-            report(.downloading(name: name, fraction: 0))
+            report(.downloading(name: name, received: 0, total: download.bytes))
             let fetched = try await fetch(base.appending(path: download.file), expected: download.bytes) {
-                report(.downloading(name: name, fraction: $0))
+                report(.downloading(name: name, received: $0, total: $1))
             }
             try files.moveItem(at: fetched, to: archive)
         }
@@ -130,44 +139,81 @@ enum RuntimeDownloader {
         return RuntimeSource.inspect(root: target)
     }
 
-    // A download with progress, as a file the caller moves into place.
+    // A download with progress, as a file the caller moves into place. A download task
+    // with a session delegate, since URLSession's async download reports no progress.
     static func fetch(
-        _ url: URL, expected: Int64, progress: @escaping @Sendable (Double) -> Void
+        _ url: URL, expected: Int64, progress: @escaping @Sendable (Int64, Int64) -> Void
     ) async throws -> URL {
-        let delegate = ProgressDelegate(expected: expected, progress: progress)
-        let (body, response) = try await URLSession.shared.download(from: url, delegate: delegate)
-        // A file URL, as the tests use, has no status.
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            try? FileManager.default.removeItem(at: body)
-            throw StepFailure(step: step, detail: String(localized: "\(url.host() ?? url.absoluteString) answered \(http.statusCode) for \(url.lastPathComponent)."))
-        }
-        // The system removes its temporary file once this returns.
         let kept = FileManager.default.temporaryDirectory.appending(path: "hadron-\(UUID().uuidString)")
-        try FileManager.default.moveItem(at: body, to: kept)
-        return kept
+        let delegate = DownloadDelegate(expected: expected, destination: kept, progress: progress)
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.start(continuation)
+                session.downloadTask(with: url).resume()
+            }
+        } onCancel: {
+            session.invalidateAndCancel()
+        }
     }
 
-    private final class ProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
         let expected: Int64
-        let progress: @Sendable (Double) -> Void
+        let destination: URL
+        let progress: @Sendable (Int64, Int64) -> Void
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<URL, Error>?
+        private var failure: Error?
         private var lastPercent = -1
 
-        init(expected: Int64, progress: @escaping @Sendable (Double) -> Void) {
+        init(expected: Int64, destination: URL, progress: @escaping @Sendable (Int64, Int64) -> Void) {
             self.expected = expected
+            self.destination = destination
             self.progress = progress
+        }
+
+        func start(_ continuation: CheckedContinuation<URL, Error>) {
+            lock.lock(); self.continuation = continuation; lock.unlock()
+        }
+
+        private func finish(_ result: Result<URL, Error>) {
+            lock.lock()
+            let waiting = continuation
+            continuation = nil
+            lock.unlock()
+            waiting?.resume(with: result)
         }
 
         func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
             let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : expected
             guard total > 0 else { return }
-            let fraction = min(Double(totalBytesWritten) / Double(total), 1)
-            let percent = Int(fraction * 100)
+            // Every percent is plenty for a bar.
+            let percent = Int(Double(totalBytesWritten) / Double(total) * 100)
             guard percent != lastPercent else { return }
             lastPercent = percent
-            progress(fraction)
+            progress(totalBytesWritten, total)
         }
 
-        func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
+        // The system removes the file once this returns, so it is moved here.
+        func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+            if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
+                let url = downloadTask.originalRequest?.url
+                failure = StepFailure(step: RuntimeDownloader.step, detail: String(localized: "\(url?.host() ?? "The server") answered \(http.statusCode) for \(url?.lastPathComponent ?? "the download")."))
+                return
+            }
+            do {
+                try FileManager.default.moveItem(at: location, to: destination)
+            } catch {
+                failure = error
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            if let error { finish(.failure(error)) }
+            else if let failure { finish(.failure(failure)) }
+            else { finish(.success(destination)) }
+        }
     }
 }

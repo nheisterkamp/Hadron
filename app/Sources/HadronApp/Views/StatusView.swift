@@ -297,11 +297,26 @@ struct StatusView: View {
             }
 
             if let activity = status.activity {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text(activity)
+                if let progress = status.activityProgress {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ProgressView(value: progress.fraction)
+                        HStack {
+                            Text(activity)
+                            Spacer()
+                            Text(progress.detail).monospacedDigit()
+                            Button(String(localized: "Stop")) { status.stopDownload() }
+                                .controlSize(.small)
+                        }
+                        .font(.callout)
                         .foregroundStyle(.secondary)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(activity)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -560,7 +575,7 @@ struct StatusView: View {
                     isProminent: rows.isEmpty,
                     help: String(localized: "Download this runtime and set up its compatibility tool."),
                     isEnabled: status.canInstall
-                ) { Task { await status.downloadRuntime(download) } }
+                ) { status.startDownload(download) }
             )
         }
     }
