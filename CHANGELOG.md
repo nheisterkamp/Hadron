@@ -3,6 +3,12 @@
 Each release of the Hadron app. `app/release.sh` takes a version's section from here for
 the GitHub release and for the update window Sparkle shows.
 
+## 1.0.3
+
+- Closing a Ubisoft game such as Trackmania now closes Ubisoft Connect too, about 15
+  seconds later, so Steam sees the game has stopped. Before, Ubisoft Connect kept running
+  and Steam showed the game as still running.
+
 ## 1.0.2
 
 - Runtime downloads show a progress bar with megabytes and a percentage, and can be

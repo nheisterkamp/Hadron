@@ -39,6 +39,7 @@
 #include <winternl.h>
 #include <shellapi.h>
 #include <shlwapi.h>
+#include <tlhelp32.h>
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
@@ -1763,6 +1764,114 @@ static DWORD WINAPI steam_drm_thread(void *arg)
     return 0;
 }
 
+/* The game process waits on wineserver's event for all user processes being gone, so
+ * Ubisoft Connect, which never exits by itself, keeps the session running after the
+ * game has quit. Once a game process other than the one Steam started has come and
+ * gone, close Ubisoft Connect so the session can end. Requiring that second process
+ * leaves Ubisoft Connect alone while it signs in or updates before the game starts. */
+static const DWORD launcher_poll_ms = 2000;
+/* Time for Ubisoft Connect to sync cloud saves, and for a game that restarts itself. */
+static const DWORD launcher_grace_ms = 15000;
+
+static BOOL image_path(DWORD pid, WCHAR *path, DWORD size)
+{
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    BOOL ret;
+
+    if (!process)
+        return FALSE;
+    ret = QueryFullProcessImageNameW(process, 0, path, &size);
+    CloseHandle(process);
+    return ret;
+}
+
+static BOOL is_launcher_path(const WCHAR *path)
+{
+    return StrStrIW(path, L"\\Ubisoft Game Launcher\\") != NULL;
+}
+
+static BOOL in_dir(const WCHAR *path, const WCHAR *dir, int dir_len)
+{
+    return lstrlenW(path) > dir_len && path[dir_len] == '\\'
+        && CompareStringOrdinal(path, dir_len, dir, dir_len, TRUE) == CSTR_EQUAL;
+}
+
+static DWORD WINAPI launcher_watch_thread(void *arg)
+{
+    DWORD child_pid = GetProcessId((HANDLE)arg);
+    DWORD self = GetCurrentProcessId();
+    const char *install = getenv("STEAM_COMPAT_INSTALL_PATH");
+    BOOL seen_game = FALSE;
+    DWORD idle_ms = 0;
+    WCHAR *game_dir;
+    int game_dir_len;
+
+    if (!install || !*install || !(game_dir = wine_get_dos_file_name(install)))
+        return 0;
+    game_dir_len = lstrlenW(game_dir);
+    while (game_dir_len && game_dir[game_dir_len - 1] == '\\')
+        game_dir_len--;
+
+    for (;;)
+    {
+        PROCESSENTRY32W entry = { sizeof(entry) };
+        WCHAR path[MAX_PATH * 2];
+        BOOL launcher = FALSE, game = FALSE, other_game = FALSE;
+        HANDLE snapshot;
+
+        Sleep(launcher_poll_ms);
+        if ((snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)) == INVALID_HANDLE_VALUE)
+            continue;
+        for (BOOL more = Process32FirstW(snapshot, &entry); more; more = Process32NextW(snapshot, &entry))
+        {
+            if (entry.th32ProcessID == self || !image_path(entry.th32ProcessID, path, ARRAY_SIZE(path)))
+                continue;
+            if (is_launcher_path(path))
+                launcher = TRUE;
+            else if (in_dir(path, game_dir, game_dir_len))
+            {
+                game = TRUE;
+                if (entry.th32ProcessID != child_pid)
+                    other_game = TRUE;
+            }
+        }
+        CloseHandle(snapshot);
+        if (launcher && other_game)
+            seen_game = TRUE;
+
+        if (!launcher || game || !seen_game)
+        {
+            idle_ms = 0;
+            continue;
+        }
+        if ((idle_ms += launcher_poll_ms) < launcher_grace_ms)
+            continue;
+        break;
+    }
+
+    WINE_ERR("Game has exited and only Ubisoft Connect is left, closing it.\n");
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    PROCESSENTRY32W entry = { sizeof(entry) };
+    WCHAR path[MAX_PATH * 2];
+
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return 0;
+    for (BOOL more = Process32FirstW(snapshot, &entry); more; more = Process32NextW(snapshot, &entry))
+    {
+        HANDLE process;
+
+        if (!image_path(entry.th32ProcessID, path, ARRAY_SIZE(path)) || !is_launcher_path(path))
+            continue;
+        if ((process = OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID)))
+        {
+            TerminateProcess(process, 0);
+            CloseHandle(process);
+        }
+    }
+    CloseHandle(snapshot);
+    return 0;
+}
+
 BOOL is_ptraced(void)
 {
     char key[50];
@@ -1868,6 +1977,8 @@ int main(int argc, char *argv[])
 
         if (game_process)
             CreateThread(NULL, 0, steam_drm_thread, child, 0, NULL);
+        if (game_process && child != INVALID_HANDLE_VALUE)
+            CreateThread(NULL, 0, launcher_watch_thread, child, 0, NULL);
     }
     else if (game_process)
     {
