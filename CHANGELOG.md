@@ -8,6 +8,20 @@ the GitHub release and for the update window Sparkle shows.
 - Closing a Ubisoft game such as Trackmania now closes Ubisoft Connect too, about 15
   seconds later, so Steam sees the game has stopped. Before, Ubisoft Connect kept running
   and Steam showed the game as still running.
+- Steam's library filter can show only Windows games, and the Mac filter no longer lists
+  Windows games.
+- Windows programs added to Steam as non-Steam games run with Hadron's default
+  compatibility tool, and their prefixes are named after the shortcut.
+- Steam no longer takes the focus away from a game while it starts.
+- High Resolution also doubles Windows' text and interface scaling, so games are not
+  drawn at half size, and turning it off halves it again.
+- The Mac keeps its display awake while a game runs.
+- Games that install Microsoft's Visual C++ runtime use it instead of Wine's copy, which
+  fixes Unreal games that said the runtime was missing.
+- Hadron and its Steam settings are available in Italian.
+- Works with the Steam beta client of October 2026 (1792192922).
+- Fixes from NotProton for Steam installed on another drive, Valve downloads that
+  stalled, and changes to a prefix while a game used it.
 
 ## 1.0.2
 

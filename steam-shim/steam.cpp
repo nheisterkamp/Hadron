@@ -1476,12 +1476,10 @@ run:
             si.wShowWindow = SW_HIDE;
         }
 
-        si.dwFlags |= STARTF_USESTDHANDLES;
-        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-        si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-        si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+        /* STARTF_USESTDHANDLES would pin console games to the log, and console calls like Console.Clear() would fail. */
+        BOOL inherit = !(flags & CREATE_NEW_CONSOLE);
 
-        if (!CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, flags, NULL, NULL, &si, &pi))
+        if (!CreateProcessW(NULL, cmdline, NULL, NULL, inherit, flags, NULL, NULL, &si, &pi))
         {
             WINE_ERR("Failed to create process %s: %u\n", wine_dbgstr_w(cmdline), GetLastError());
             return INVALID_HANDLE_VALUE;
@@ -1499,7 +1497,7 @@ static BOOL steam_command_handler(int argc, char *argv[])
     BOOL restart_self = FALSE;
     const char *sgi;
 
-    /* If there are command line options, only forward steam:// and options start with - */
+    /* Only steam:// links reach the Mac client. Other - options are accepted and dropped. */
     if (argc > 1 && StrStrIA(argv[1], "steam://") != argv[1] && argv[1][0] != '-')
         return FALSE;
 

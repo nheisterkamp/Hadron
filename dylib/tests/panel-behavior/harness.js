@@ -36,9 +36,10 @@ function panel(emit, form, globals = { document: { documentElement: { lang: 'en'
     Apps: { SetAppLaunchOptions: (appid, opts) => written.push({ appid, opts }) },
   };
   const build = new Function(names[0], names[1], 'SteamClient', 'globalThis',
-    src + '\nreturn { NPHadronOpts, NPHadronPick: typeof NPHadronPick === "function" ? NPHadronPick : null };');
-  const { NPHadronOpts, NPHadronPick } = build(react, barrel, SteamClient, globals);
-  return { render: NPHadronOpts, pick: NPHadronPick, written };
+    src + '\nreturn { NPHadronOpts, NPHadronPick: typeof NPHadronPick === "function" ? NPHadronPick : null,' +
+    ' NPHadronToolQuery: typeof NPHadronToolQuery === "function" ? NPHadronToolQuery : null };');
+  const { NPHadronOpts, NPHadronPick, NPHadronToolQuery } = build(react, barrel, SteamClient, globals);
+  return { render: NPHadronOpts, pick: NPHadronPick, toolQuery: NPHadronToolQuery, written };
 }
 
 // Function components are resolved rather than recorded, so a check sees the nodes the

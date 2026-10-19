@@ -43,16 +43,19 @@ enum RunnerInstaller {
             let staging = target.deletingLastPathComponent()
                 .appending(path: ".\(target.lastPathComponent).new")
             try? fm.removeItem(at: staging)
+            defer { try? fm.removeItem(at: staging) }
             try fm.createDirectory(at: runners, withIntermediateDirectories: true)
             try copyPayload(from: install.root, to: staging)
+            try verifyClone(build: build, root: staging)
             if occupied {
                 try fm.removeItem(at: target)
             }
             try fm.moveItem(at: staging, to: target)
+            return true
         }
 
         try verifyClone(build: build, root: target)
-        return copying
+        return false
     }
 
     static let removeStep = String(localized: "Remove build")

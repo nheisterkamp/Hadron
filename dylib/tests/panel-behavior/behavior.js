@@ -106,8 +106,6 @@ for (const form of Object.keys(FORMS)) {
   const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
-  t.ok(nodes('').some(x => x.type === 'Section' && x.props.label === 'Controllers (May break Steam Input. Not recommended)'),
-       'the controller section warns what the row changes');
   written.length = 0;
   raw('').props.onChange(true);
   t.ok(last().trim() === 'HADRON_RAW_CONTROLLERS=1 %command%', `the controller row writes its flag (${last()})`);

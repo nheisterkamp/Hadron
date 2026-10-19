@@ -85,6 +85,27 @@ wine-11.15" "$(launch wine-11.15 "" "wine-12.0-arm64
 Hadron Wine 12.0 (FEX)
 ")"
 
+echo "== alerts =="
+alert=$(extract show_alert)
+[ -n "$alert" ] || { echo "FAIL: show_alert not found in $SRC"; exit 1; }
+data=$(mktemp -d "$work/compatdata.XXXXXX")
+(
+	verb=waitforexitandrun
+	# shellcheck disable=SC2329 # show_alert runs this in place of the real dialog
+	osascript() {
+		if /usr/bin/lockf -s -t 0 "$data/.hadron-prefix.lock" true; then
+			echo free > "$data/during-alert"
+		else
+			echo held > "$data/during-alert"
+		fi
+	}
+	eval "$alert"
+	exec 8>> "$data/.hadron-prefix.lock"
+	/usr/bin/lockf -s -t 0 8
+	show_alert "title" "message"
+)
+is "an open alert does not keep the prefix locked" "free" "$(cat "$data/during-alert" 2>/dev/null)"
+
 if [ "$fails" -eq 0 ]; then
 	echo "==> buildcheck: all assertions hold"
 else

@@ -9,7 +9,8 @@ Wine distribution and deliberately supports only that, so please report problems
 Hadron here, not there.
 
 It follows the Steam client versions NotProton supports, currently the stable client
-(version 1791918634) and the beta (version 1791686101).
+(version 1791918634) and the beta (version 1792192922). Steam libraries on NTFS file
+systems or drivers are not supported yet.
 
 ## How it works
 
