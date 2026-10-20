@@ -1161,6 +1161,15 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
     show_alert "Saved-game folders need attention" "Hadron left the conflicting files in place. Open this prefix's hadron-run.log for details before trying again."
     exit 1
   fi
+   # Black Desert Online: seed the launcher config so it skips the GPU/off-screen
+  # probe. Only written when missing, so a user's later edits are kept.
+  if [ "$app_id" = 582660 ]; then
+    bdo_dir="$WINEPREFIX/drive_c/users/steamuser/My Documents/Black Desert"
+    if mkdir -p "$bdo_dir" 2>> "$log" && [ ! -f "$bdo_dir/GameOptionLauncher.txt" ]; then
+      printf 'launcherGpu = 0\nlauncherOffScreen = 0\n' \
+        > "$bdo_dir/GameOptionLauncher.txt" 2>> "$log" || true
+    fi
+  fi
   echo "video: RetinaMode=${HADRON_RETINA:-0}" >> "$log" 2>&1 || true
   set_stage "game drive"
   map_game_drive
@@ -1573,6 +1582,25 @@ if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
 else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
+printf 'launch_args=%s\n' "$launch_args" >> "$log" 2>&1 || true
+
+# Black Desert Online (or any game opted in with NOSTEAM=1 in its launch
+# options) drops --steam so the launcher shows the account picker instead
+# of signing in through Steam. POSIX sh has no arrays, so rebuild $@.
+if [ -n "${NOSTEAM:-}" ]; then
+  remaining=$#
+  while [ "$remaining" -gt 0 ]; do
+    current=$1
+    shift
+    remaining=$((remaining - 1))
+    [ "$current" = "--steam" ] || set -- "$@" "$current"
+  done
+  echo "=== NOSTEAM: stripped --steam from the launch arguments ===" >> "$log" 2>&1 || true
+fi
+
+printf '=== launching (%s): %s %s ===\n' "$verb" "$WINELOADER" "$*" >> "$log" 2>&1 || true
+
+target="$1"
 set -- --args "$shim_exe" "$@"
 for name in $(env | LC_ALL=C sed -nE 's/^(Steam[A-Za-z0-9]*|VK_DRIVER_FILES|CX_APPLEGPTK_LIBD3DSHARED_PATH|(DXMT_|DXVK_|D3DM_|MTL_|ROSETTA_|HADRON_FEX_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
