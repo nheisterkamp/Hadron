@@ -444,6 +444,11 @@ static void tool_list_cases(void) {
     unlink(path);
     check(kept == 40 && strcmp(g_tools[39].name, "hadron-39") == 0
           && strcmp(g_tools[0].dir, "/tools/hadron-0") == 0, "a long list keeps every tool");
+    np_compat_tool_info_t info;
+    check(np_compat_tool_by_name("hadron-39x", 9, &info) && strcmp(info.name, "hadron-39") == 0
+          && strcmp(info.display, "Tool 39") == 0 && !info.fex, "the last of a long list is found by name");
+    check(!np_compat_tool_by_name("hadron-3", 7, &info) && !np_compat_tool_by_name("hadron-40", 9, &info)
+          && !np_compat_tool_by_name(NULL, 0, &info), "a name has to match a listed tool whole");
     check(strcmp(np_compat_fallback_tool_name(), "hadron-0") == 0,
           "the fallback is the first configured tool");
 

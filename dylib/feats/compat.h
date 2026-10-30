@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../util/buildid.h"
+
 // Manager tool array: base pointer at TOOL_ARRAY_OFF, count at TOOL_COUNT_OFF,
 // fixed per-entry stride from np_compat_tool_stride.
 #define COMPAT_MANAGER_TOOL_ARRAY_OFF  0x320
@@ -131,6 +133,17 @@ const char *np_compat_fallback_tool_name(void);
 // returns how many. The names stay valid for the life of the process.
 size_t np_compat_fex_tools(const char **names, size_t max);
 
+typedef struct {
+    const char *name;
+    const char *build;
+    const char *display;
+    bool        fex;
+} np_compat_tool_info_t;
+
+size_t np_compat_tools(np_compat_tool_info_t *out, size_t max);
+
+bool np_compat_tool_by_name(const char *name, size_t n, np_compat_tool_info_t *out);
+
 uint32_t np_compat_manager_tools_max(void);
 
 // Absolute path to the directory of the first tool in the app's list, or NULL.
@@ -141,6 +154,9 @@ int np_compat_runs_tool(const char *cmd);
 
 // True when the app is set to run with a Hadron compatibility tool.
 int np_compat_app_runs_tool(uint32_t appid);
+
+// NULL when the app doesn't have a Steam Play compatibility tool.
+const char *np_compat_app_tool_dir(uint32_t appid);
 
 // Command line template for the tool's toolmanifest.vdf commandline value.
 const char *np_compat_tool_commandline(void);

@@ -47,10 +47,23 @@ enum RunnerInstaller {
             try fm.createDirectory(at: runners, withIntermediateDirectories: true)
             try copyPayload(from: install.root, to: staging)
             try verifyClone(build: build, root: staging)
-            if occupied {
-                try fm.removeItem(at: target)
+            guard occupied else {
+                try fm.moveItem(at: staging, to: target)
+                return true
             }
-            try fm.moveItem(at: staging, to: target)
+            // Deleting in place can fail part way and leave half a runner. A fresh name each time
+            // keeps a leftover that would not delete from blocking the next repair.
+            let trash = target.deletingLastPathComponent()
+                .appending(path: ".\(target.lastPathComponent).\(UUID().uuidString).removing")
+            removeLeftoverRemovals(runners: runners)
+            try fm.moveItem(at: target, to: trash)
+            do {
+                try fm.moveItem(at: staging, to: target)
+            } catch {
+                try? fm.moveItem(at: trash, to: target)
+                throw error
+            }
+            try? fm.removeItem(at: trash)
             return true
         }
 

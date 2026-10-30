@@ -48,7 +48,7 @@ stage() {
 	env bridge_src="$work/bridge" WINEPREFIX="$prefix" prefix_steam="$steam" \
 		log="$work/log" body="$body" wine_unix="$wine_unix" \
 		STEAM_COMPAT_DATA_PATH="$compat" cross="$cross" \
-		sh -ec 'eval "$body"; echo reached' > "$work/out" 2>&1 || true
+		sh -ec 'set_stage() { :; }; eval "$body"; echo reached' > "$work/out" 2>&1 || true
 }
 staged() {
 	n=0
@@ -62,6 +62,8 @@ is "the launch goes on past staging" reached "$(cat "$work/out")"
 is "every file is copied" 6 "$(staged)"
 is "the ARM64 unix library is staged beside the DLL" "aarch64-unix bridge" "$(cat "$steam/lsteamclient.so" 2>/dev/null)"
 unlogged "nothing claims to be staged already" "=== bridge already staged ==="
+is "the prefix has system32/config, which Steam's CEG survey looks up" yes \
+	"$([ -d "$prefix/drive_c/windows/system32/config" ] && echo yes || echo no)"
 
 echo "== a second launch copies nothing"
 stage

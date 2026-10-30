@@ -50,6 +50,53 @@ struct PrefixStoreTests {
         #expect(libraries.last?.compatdata.lastPathComponent == "compatdata")
     }
 
+    @Test("A library path with an escaped quote or backslash is read whole")
+    func readsEscapedLibraryPaths() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let vdf = dir.appending(path: "libraryfolders.vdf")
+        try write(
+            #"""
+            "libraryfolders"
+            {
+            \#t"0"
+            \#t{
+            \#t\#t"path"\#t\#t"/Volumes/Bob\"s Drive/Back\\Slash/SteamLibrary"
+            \#t}
+            }
+            """#, to: vdf)
+
+        let libraries = PrefixStore.libraries(vdf: vdf)
+        #expect(libraries.map { $0.root.path(percentEncoded: false) } == [#"/Volumes/Bob"s Drive/Back\Slash/SteamLibrary"#])
+    }
+
+    // The old splitter dropped empty fields, so an empty path was never read as a library
+    @Test("An empty library path is skipped")
+    func skipsEmptyLibraryPath() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let vdf = dir.appending(path: "libraryfolders.vdf")
+        try write(
+            #"""
+            "libraryfolders"
+            {
+            \#t"0"
+            \#t{
+            \#t\#t"path"\#t\#t""
+            \#t}
+            \#t"1"
+            \#t{
+            \#t\#t"path"\#t\#t"/Volumes/Games/SteamLibrary"
+            \#t}
+            }
+            """#, to: vdf)
+
+        let libraries = PrefixStore.libraries(vdf: vdf)
+        #expect(libraries.map { $0.root.path(percentEncoded: false) } == ["/Volumes/Games/SteamLibrary"])
+    }
+
     @Test("A missing or empty file still yields the default library")
     func fallsBackToTheDefaultLibrary() throws {
         let dir = try scratchDirectory("pfx")
@@ -112,6 +159,49 @@ struct PrefixStoreTests {
         // hiding, so no name has to be survivable.
         #expect(orphan?.name == nil)
         #expect(orphan?.title == "App 1649240")
+    }
+
+    @Test("A quote inside the name survives the manifest's escaping")
+    func readsAnEscapedAppName() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = SteamLibrary(root: dir)
+
+        try FileManager.default.createDirectory(
+            at: library.compatdata.appending(path: "5102100/pfx"), withIntermediateDirectories: true)
+        try write(
+            """
+            "AppState"
+            {
+            \t"appid"\t\t"5102100"
+            \t"name"\t\t"Rideshare \\"Stimulator\\" Demo"
+            \t"installdir"\t\t"RideshareStimulatorDemo"
+            }
+            """, to: library.steamapps.appending(path: "appmanifest_5102100.acf"))
+
+        let prefix = PrefixStore.all(libraries: [library]).first { $0.appID == "5102100" }
+        #expect(prefix?.name == "Rideshare \"Stimulator\" Demo")
+    }
+
+    @Test("Newline, tab and backslash escapes in the name are decoded")
+    func decodesManifestEscapes() throws {
+        let dir = try scratchDirectory("pfx")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let library = SteamLibrary(root: dir)
+
+        try FileManager.default.createDirectory(
+            at: library.compatdata.appending(path: "5102101/pfx"), withIntermediateDirectories: true)
+        try write(
+            """
+            "AppState"
+            {
+            \t"appid"\t\t"5102101"
+            \t"name"\t\t"One\\nTwo\\tThree\\\\Four\\qFive"
+            }
+            """, to: library.steamapps.appending(path: "appmanifest_5102101.acf"))
+
+        let prefix = PrefixStore.all(libraries: [library]).first { $0.appID == "5102101" }
+        #expect(prefix?.name == "One\nTwo\tThree\\Four\\qFive")
     }
 
     @Test("A non-Steam shortcut prefix is named from shortcuts.vdf")

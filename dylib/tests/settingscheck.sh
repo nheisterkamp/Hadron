@@ -10,7 +10,8 @@ wrapper=$(sed -n '/^without_lock_fds() {$/,/^}$/p' "$SRC")
 [ -n "$wrapper" ] || { echo "FAIL: without_lock_fds not found in $SRC"; exit 1; }
 helpers=""
 for helper in controller_ids ids_without hidraw_lines write_owned_controllers plan_hidden_controllers \
-	plan_disable_hidraw winebus_lines plan_logpixels video_lines; do
+	plan_disable_hidraw winebus_lines plan_logpixels video_lines prefix_up_to_date \
+	settings_already_applied; do
 	part=$(sed -n "/^$helper() {\$/,/^}\$/p" "$SRC")
 	[ -n "$part" ] || { echo "FAIL: $helper not found in $SRC"; exit 1; }
 	helpers="$helpers
@@ -70,7 +71,8 @@ in_registry() {
 		printf '%s\n' "[System\\\\ControlSet001\\\\Services\\\\winebus\\\\Devices\\\\$id] 1791230000" '"Hidraw"=dword:00000000' ''
 	done > "$case_dir/pfx/system.reg"
 	# A prefix Hadron launched before already has winebus set up for Steam Input's pad.
-	printf '%s\n' '[System\\ControlSet001\\Services\\winebus] 1791230000' '"DisableInput"=dword:00000001' '' \
+	printf '%s\n' '[System\\ControlSet001\\Services\\winebus] 1791230000' '"DisableInput"=dword:00000001' \
+		'"Enable SDL"=dword:00000000' '' \
 		>> "$case_dir/pfx/system.reg"
 }
 launch() {
@@ -81,7 +83,7 @@ launch() {
 	run_in "$1" "$2"
 }
 run_in() {
-	env WINEPREFIX="$case_dir/pfx" WINELOADER="$work/wine" HADRON_RETINA="$1" \
+	env WINEPREFIX="$case_dir/pfx" WINELOADER="$work/wine" HADRON_RETINA="$1" np_root="${np_root-}" \
 		WINESERVER="$work/wineserver" STEAM_COMPAT_DATA_PATH="$case_dir" \
 		SDL_GAMECONTROLLER_IGNORE_DEVICES="${IGNORE-}" \
 		SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT="${EXCEPT-}" \
@@ -270,6 +272,85 @@ VERB=run
 again "" 0
 same_file "a helper leaves them alone" "$work/helper" "$case_dir/imported"
 unset VERB
+
+echo "== settings already in the prefix"
+mkdir -p "$work/cx/share/wine"
+: > "$work/cx/share/wine/wine.inf"
+applied() {
+	new_case
+	in_registry 057e/2006 057e/2007 057e/2009
+	printf '%s\n' 057e/2006 057e/2007 057e/2009 > "$case_dir/hadron-hidden-controllers"
+	printf '%s\n' '[Software\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug] 1791230000' '"Auto"="0"' '' \
+		'[Software\\Wow6432Node\\Microsoft\\Windows NT\\CurrentVersion\\AeDebug] 1791230000' '"Auto"="0"' '' \
+		'[Software\\Classes\\steam] 1791230000' '"URL Protocol"=""' '' \
+		'[Software\\Classes\\steam\\shell\\open\\command] 1791230000' \
+		'@="\"C:\\Program Files (x86)\\Steam\\steam.exe\" \"%1\""' '' >> "$case_dir/pfx/system.reg"
+	printf '%s\n' '[Software\\Wine\\WineDbg] 1791230000' '"ShowCrashDialog"=dword:00000000' '' > "$case_dir/pfx/user.reg"
+	printf '%s\r\n' "$(stat -f %m "$work/cx/share/wine/wine.inf")" > "$case_dir/pfx/.update-timestamp"
+}
+np_root="$work/cx"
+applied
+run_in "" 0
+is "settings already in the prefix start no Wine" "" "$(calls)"
+is "the skip is logged" "=== prefix settings already applied, skipped the import ===" "$(sed -n 1p "$case_dir/log")"
+is "the file is gone after a skip" 0 "$(leftovers)"
+is "a skip does not end the launch" returned "$(cat "$case_dir/out")"
+applied
+printf '%s\r\n' 1 > "$case_dir/pfx/.update-timestamp"
+run_in "" 0
+is "a prefix Wine still has to update gets the import" 'reg import C:\hadron-settings.X' "$(calls)"
+applied
+printf '%s\n' '[Software\\Classes\\steam] 1791230000' '"URL Protocol"="x"' '' >> "$case_dir/pfx/system.reg"
+run_in "" 0
+is "a conflicting value in the registry gets the import" 'reg import C:\hadron-settings.X' "$(calls)"
+applied
+run_in 1 0
+is "a changed setting gets the import" 'reg import C:\hadron-settings.X' "$(calls | head -1)"
+applied
+{ printf '%s\n' 'WINE REGISTRY Version 2' ';; All keys relative to \\Machine' '' '#arch=win64' ''; cat "$case_dir/pfx/system.reg"; } > "$work/real.reg"
+printf '%s\n' '[Software\\Wine\\Fonts] 1791230000' '#time=1dc4d0a7f0b1c2e' "\"Blob\"=hex:01,02,03,\\" '  04,05' '' >> "$work/real.reg"
+mv "$work/real.reg" "$case_dir/pfx/system.reg"
+run_in "" 0
+is "Wine's headers, timestamps and continued values don't block the skip" "" "$(calls)"
+applied
+printf '%s\n' '[Software\\Wine\\Mac Driver] 1791230000' '"RetinaMode"="y"' '' '[Control Panel\\Desktop] 1791230000' '"LogPixels"=dword:000000c0' '' >> "$case_dir/pfx/user.reg"
+run_in 1 0
+is "Retina already on with doubled LogPixels starts no Wine" "" "$(calls)"
+run_in 0 0
+is "turning Retina off gets the import" 'reg import C:\hadron-settings.X' "$(calls | head -1)"
+
+check() {
+	printf '%s\r\n' 'Windows Registry Editor Version 5.00' '' "$@" > "$case_dir/request.reg"
+	if env WINEPREFIX="$case_dir/pfx" np_root="$np_root" settings_file="$case_dir/request.reg" body="$body" \
+		sh -ec 'eval "$body"; settings_already_applied' > /dev/null 2>&1; then
+		echo applied
+	else
+		echo import
+	fi
+}
+applied
+printf '%s\n' '[System\\ControlSet001\\Services\\winebus] 1791230000' '"DisableHidraw"=dword:00000001' '' >> "$case_dir/pfx/system.reg"
+is "CurrentControlSet is read as ControlSet001" applied \
+	"$(check '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' '"DisableHidraw"=dword:00000001')"
+is "a different value there still imports" import \
+	"$(check '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' '"DisableHidraw"=dword:00000000')"
+is "removing a value that's already gone is applied" applied \
+	"$(check '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' '"Missing"=-')"
+is "removing a value that's still there imports" import \
+	"$(check '[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus]' '"DisableHidraw"=-')"
+is "deleting a key that's still there imports" import \
+	"$(check '[-HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus\Devices\057e/2006]')"
+is "deleting a key that's already gone is applied" applied \
+	"$(check '[-HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\WineBus\Devices\054c/0ce6]')"
+is "deleting a key Wine only shows through its subkeys imports" import \
+	"$(check '[-HKEY_LOCAL_MACHINE\Software\Classes\steam\shell]')"
+is "a key that only shares the deleted name's prefix is applied" applied \
+	"$(check '[-HKEY_LOCAL_MACHINE\Software\Classes\ste]')"
+is "a value under HKEY_CURRENT_USER is read from user.reg" applied \
+	"$(check '[HKEY_CURRENT_USER\Software\Wine\WineDbg]' '"ShowCrashDialog"=dword:00000000')"
+is "the same value under HKEY_LOCAL_MACHINE is not" import \
+	"$(check '[HKEY_LOCAL_MACHINE\Software\Wine\WineDbg]' '"ShowCrashDialog"=dword:00000000')"
+unset np_root
 
 if [ "$fails" -eq 0 ]; then
 	echo "==> settingscheck: all assertions hold"

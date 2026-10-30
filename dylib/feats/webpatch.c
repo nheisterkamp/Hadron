@@ -1,10 +1,19 @@
 // Enables Steam Play in the UI/enables the Compatibility tab in game properties
 #include "webpatch.h"
+#include "compatsvc.h"
+#include "../util/buildid.h"
 #include "nativeplatform.h"
 #include "../util/log.h"
 
+#include <dirent.h>
+#include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#define NP_STR_(x) #x
+#define NP_STR(x) NP_STR_(x)
 
 #define NP_C1 "\001"
 #define NP_C2 "\002"
@@ -25,11 +34,50 @@
 #define NP_FALLBACK_TOOL "\021"
 // Stands for the JS array set by np_webpatch_set_fex_tools.
 #define NP_FEX_TOOLS "\022"
+#define NP_DEFAULTS "\027"
+#define NP_BUILDS "\030"
+// NPHadronReady and NPHadronFeat.
+#define NP_READY "\031"
+#define NP_FEATS "\032"
 
 #define NP_TOOL_NAME_MAX 128
 
-static _Thread_local char g_fallback_tool[NP_TOOL_NAME_MAX];
-static _Thread_local char g_fex_tools[NP_WEBPATCH_FEX_TOOLS_MAX * (NP_TOOL_NAME_MAX + 3) + 3] = "[]";
+#define NP_UNREAD_DEFAULTS "{rosetta:null,fex:null}"
+
+enum { IN_FALLBACK_TOOL, IN_FEX_TOOLS, IN_DEFAULTS, IN_BUILDS, IN_COUNT };
+typedef struct { char *text[IN_COUNT]; } np_inputs_t;
+static const char *const g_unset[IN_COUNT] = { "", "[]", NP_UNREAD_DEFAULTS, "[]" };
+static pthread_key_t g_inputs_key;
+static pthread_once_t g_inputs_once = PTHREAD_ONCE_INIT;
+
+static void inputs_free(void *p) {
+    np_inputs_t *in = p;
+    for (int i = 0; i < IN_COUNT; i++) free(in->text[i]);
+    free(in);
+}
+
+static int g_inputs_ok;
+
+static void inputs_key_make(void) { g_inputs_ok = pthread_key_create(&g_inputs_key, inputs_free) == 0; }
+
+static void set_input(int which, char *text) {
+    pthread_once(&g_inputs_once, inputs_key_make);
+    if (!g_inputs_ok) { free(text); return; }
+    np_inputs_t *in = pthread_getspecific(g_inputs_key);
+    if (!in && (in = calloc(1, sizeof *in)) && pthread_setspecific(g_inputs_key, in) != 0) {
+        free(in);
+        in = NULL;
+    }
+    if (!in) { free(text); return; }
+    free(in->text[which]);
+    in->text[which] = text;
+}
+
+static const char *input_text(int which) {
+    pthread_once(&g_inputs_once, inputs_key_make);
+    const np_inputs_t *in = g_inputs_ok ? pthread_getspecific(g_inputs_key) : NULL;
+    return in && in->text[which] ? in->text[which] : g_unset[which];
+}
 
 typedef struct {
     const char *find;
@@ -37,6 +85,8 @@ typedef struct {
     int         expect;   // exact occurrence count, else abort
     int         optional; // skipped in the event that it doesn't match the current Steam client
 } np_gate_t;
+
+#define NP_GATE_PAGE 2
 
 #define NP_GATE_MAX 32
 
@@ -63,30 +113,318 @@ static int is_tool_name(const char *name) {
 }
 
 void np_webpatch_set_fallback_tool(const char *name) {
-    g_fallback_tool[0] = '\0';
-    if (name && is_tool_name(name))
-        memcpy(g_fallback_tool, name, strlen(name) + 1);
+    set_input(IN_FALLBACK_TOOL, name && is_tool_name(name) ? strdup(name) : NULL);
 }
+
+typedef struct { char *buf; size_t size, len; int ok; } np_js_t;
+
+static np_js_t js_alloc(size_t size) {
+    char *buf = malloc(size);
+    if (buf) buf[0] = '\0';
+    return (np_js_t){ buf, buf ? size : 0, 0, buf != NULL };
+}
+
+static char *js_done(np_js_t *j) {
+    if (j->ok) return j->buf;
+    free(j->buf);
+    return NULL;
+}
+
+static void js_put(np_js_t *j, const char *str, size_t n) {
+    if (!j->ok || j->len + n >= j->size) { j->ok = 0; return; }
+    memcpy(j->buf + j->len, str, n);
+    j->len += n;
+    j->buf[j->len] = '\0';
+}
+
+static void js_puts(np_js_t *j, const char *str) { js_put(j, str, strlen(str)); }
 
 void np_webpatch_set_fex_tools(const char *const *names, size_t count) {
-    size_t n = 0;
-    g_fex_tools[n++] = '[';
-    for (size_t i = 0; i < count && i < NP_WEBPATCH_FEX_TOOLS_MAX; i++) {
+    if (count > NP_WEBPATCH_FEX_TOOLS_MAX) count = NP_WEBPATCH_FEX_TOOLS_MAX;
+    size_t size = 3;
+    for (size_t i = 0; names && i < count; i++) size += 3 + (names[i] ? strlen(names[i]) : 0);
+    np_js_t j = js_alloc(size);
+    js_put(&j, "[", 1);
+    for (size_t i = 0; names && i < count; i++) {
         if (!names[i] || !*names[i] || !is_tool_name(names[i])) continue;
-        size_t len = strlen(names[i]);
-        if (n > 1) g_fex_tools[n++] = ',';
-        g_fex_tools[n++] = '"';
-        memcpy(g_fex_tools + n, names[i], len);
-        n += len;
-        g_fex_tools[n++] = '"';
+        if (j.ok && j.buf[j.len - 1] != '[') js_put(&j, ",", 1);
+        js_put(&j, "\"", 1);
+        js_puts(&j, names[i]);
+        js_put(&j, "\"", 1);
     }
-    g_fex_tools[n++] = ']';
-    g_fex_tools[n] = '\0';
+    js_put(&j, "]", 1);
+    set_input(IN_FEX_TOOLS, js_done(&j));
 }
 
+static int is_setting_key(const char *str, size_t n) {
+    if (!n) return 0;
+    for (size_t i = 0; i < n; i++)
+        if (!((str[i] >= 'A' && str[i] <= 'Z') || (str[i] >= '0' && str[i] <= '9') || str[i] == '_'))
+            return 0;
+    return 1;
+}
+
+static int is_setting_value(const char *str, size_t n) {
+    for (size_t i = 0; i < n; i++)
+        if (!is_ident_char((unsigned char)str[i]) && str[i] != '.' && str[i] != '=') return 0;
+    return 1;
+}
+
+static void js_settings(np_js_t *j, const char *lines) {
+    if (!lines) { js_puts(j, "null"); return; }
+    js_put(j, "{", 1);
+    int first = 1;
+    for (const char *at = lines; *at; ) {
+        const char *nl = strchr(at, '\n');
+        size_t n = nl ? (size_t)(nl - at) : strlen(at);
+        const char *eq = memchr(at, '=', n);
+        if (eq && is_setting_key(at, (size_t)(eq - at)) && is_setting_value(eq + 1, n - (size_t)(eq - at) - 1)) {
+            if (!first) js_put(j, ",", 1);
+            first = 0;
+            js_put(j, "\"", 1);
+            js_put(j, at, (size_t)(eq - at));
+            js_put(j, "\":\"", 3);
+            js_put(j, eq + 1, n - (size_t)(eq - at) - 1);
+            js_put(j, "\"", 1);
+        }
+        at += n + (nl ? 1 : 0);
+    }
+    js_put(j, "}", 1);
+}
+
+void np_webpatch_set_defaults(const char *rosetta, const char *fex) {
+    np_js_t j = js_alloc(32 + 3 * (strlen(rosetta ? rosetta : "") + strlen(fex ? fex : "")));
+    js_puts(&j, "{rosetta:");
+    js_settings(&j, rosetta);
+    js_puts(&j, ",fex:");
+    js_settings(&j, fex);
+    js_puts(&j, "}");
+    if (!j.ok) NP_WARN("webpatch: the saved defaults do not fit the page, it hides them");
+    set_input(IN_DEFAULTS, js_done(&j));
+}
+
+static int is_label(const char *str) {
+    if (!str || !*str) return 0;
+    for (; *str; str++)
+        if ((unsigned char)*str < 0x20 || *str == '"' || *str == '\\') return 0;
+    return 1;
+}
+
+void np_webpatch_set_builds(const np_webpatch_build_t *builds, size_t count) {
+    if (count > NP_WEBPATCH_BUILDS_MAX) count = NP_WEBPATCH_BUILDS_MAX;
+    size_t size = 3;
+    for (size_t i = 0; builds && i < count; i++)
+        size += 64 + strlen(builds[i].tool ? builds[i].tool : "") + strlen(builds[i].build ? builds[i].build : "")
+              + strlen(builds[i].label ? builds[i].label : "")
+              + (builds[i].override ? 3 * strlen(builds[i].override) + 8 : 4);
+    np_js_t j = js_alloc(size);
+    js_put(&j, "[", 1);
+    for (size_t i = 0; builds && i < count; i++) {
+        const np_webpatch_build_t *b = &builds[i];
+        if (!b->tool || !*b->tool || !is_tool_name(b->tool) || !np_is_build_id(b->build) || !is_label(b->label)) {
+            NP_WARN("webpatch: tool %zu cannot be shown on the Settings page", i);
+            continue;
+        }
+        if (j.ok && j.buf[j.len - 1] != '[') js_put(&j, ",", 1);
+        js_puts(&j, "{id:\"");
+        js_puts(&j, b->tool);
+        js_puts(&j, "\",build:\"");
+        js_puts(&j, b->build);
+        js_puts(&j, b->fex ? "\",runner:\"fex\",label:\"" : "\",runner:\"rosetta\",label:\"");
+        js_puts(&j, b->label);
+        js_puts(&j, "\",override:");
+        js_settings(&j, b->override);
+        js_puts(&j, "}");
+    }
+    js_put(&j, "]", 1);
+    if (!j.ok) NP_WARN("webpatch: the Wine runtimes do not fit the page, it shows none");
+    set_input(IN_BUILDS, js_done(&j));
+}
+
+static int has_suffix(const char *s, const char *suf);
+
+// "Developer" section rows are declared in ~/Library/Application Support/hadron/plugins/*.conf,
+// one "key = value" per line, applied at launch by compat_run.sh.
+#define NP_FEAT_DIR      "Library/Application Support/hadron/plugins"
+#define NP_FEAT_MAX      32
+#define NP_FEAT_REQ_MAX  4
+#define NP_FEAT_STR      192
+#define NP_FEAT_DESC     512
+
+typedef struct {
+    char key[NP_FEAT_STR];
+    char label[NP_FEAT_STR];
+    char desc[NP_FEAT_DESC];
+    char section[32];
+    char on[32];
+    char off[32];
+    char depends[NP_FEAT_STR];
+    char req[NP_FEAT_REQ_MAX][NP_FEAT_STR];
+    int  nreq;
+} np_feat_t;
+
+static int feat_exists(const char *home, const char *rel) {
+    char path[2048];
+    struct stat st;
+    if (!rel || !*rel) return 0;
+    if (*rel == '/') return stat(rel, &st) == 0 && S_ISREG(st.st_mode);
+    if (snprintf(path, sizeof(path), "%s/%s", home, rel) >= (int)sizeof(path)) return 0;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+// isspace() without the locale, to match [[:space:]] in compat_run.sh.
+static int feat_space(char c) {
+    return c == ' ' || (c >= '\t' && c <= '\r');
+}
+
+static void feat_trim(char *v) {
+    size_t n = strlen(v);
+    while (n && feat_space(v[n - 1])) v[--n] = 0;
+}
+
+// compat_run.sh ignores keys that aren't valid shell variable names, so the compatibility panel does the same thing
+static int feat_key_ok(const char *k) {
+    if (strncmp(k, "HADRON_", 7) != 0 || !k[7]) return 0;
+    for (k += 7; *k; k++)
+        if (!((*k >= 'A' && *k <= 'Z') || (*k >= '0' && *k <= '9') || *k == '_')) return 0;
+    return 1;
+}
+
+// Takes the first value when a setting appears twice so as to match compat_run.sh.
+static void feat_set(char *dst, size_t size, const char *v, int *bad) {
+    if (*dst) return;
+    if (strlen(v) >= size) *bad = 1;
+    snprintf(dst, size, "%s", v);
+}
+
+static np_feat_t *feat_find(np_feat_t *list, int n, const char *key) {
+    for (int i = 0; i < n; i++)
+        if (strcmp(list[i].key, key) == 0) return &list[i];
+    return NULL;
+}
+
+// Unknown fields are ignored so a plugin file written for a later version still loads.
+static void feat_read_file(const char *path, np_feat_t *list, int *count) {
+    char line[2048];
+    np_feat_t f;
+    int bad = 0;
+    FILE *fp = fopen(path, "r");
+    if (!fp) return;
+    memset(&f, 0, sizeof(f));
+    while (fgets(line, sizeof(line), fp)) {
+        char *eq, *v, *k = line;
+        size_t len = strcspn(line, "\n");
+        if (len >= sizeof(line) - 1) {
+            NP_WARN("plugins: %s has a line over %zu bytes, ignored", path, sizeof(line) - 2);
+            fclose(fp);
+            return;
+        }
+        line[len] = 0;
+        while (feat_space(*k)) k++;
+        if (*k == '#' || !(eq = strchr(k, '='))) continue;
+        *eq = 0;
+        v = eq + 1;
+        feat_trim(k);
+        while (feat_space(*v)) v++;
+        feat_trim(v);
+        if (!*v) continue;
+        if (strcmp(k, "key") == 0) feat_set(f.key, sizeof(f.key), v, &bad);
+        else if (strcmp(k, "label") == 0) feat_set(f.label, sizeof(f.label), v, &bad);
+        else if (strcmp(k, "description") == 0) feat_set(f.desc, sizeof(f.desc), v, &bad);
+        else if (strcmp(k, "section") == 0) feat_set(f.section, sizeof(f.section), v, &bad);
+        else if (strcmp(k, "on") == 0) feat_set(f.on, sizeof(f.on), v, &bad);
+        else if (strcmp(k, "off") == 0) feat_set(f.off, sizeof(f.off), v, &bad);
+        else if (strcmp(k, "depends") == 0) feat_set(f.depends, sizeof(f.depends), v, &bad);
+        else if (strcmp(k, "requires") == 0 && f.nreq < NP_FEAT_REQ_MAX)
+            feat_set(f.req[f.nreq++], NP_FEAT_STR, v, &bad);
+    }
+    fclose(fp);
+    if (bad) {
+        NP_WARN("plugins: %s has a value that's too long, ignored", path);
+        return;
+    }
+    if (!*f.on) snprintf(f.on, sizeof(f.on), "1");
+    if (!*f.section) snprintf(f.section, sizeof(f.section), "dev");
+    if (!*f.key) {
+        NP_WARN("plugins: %s has no key, ignored", path);
+        return;
+    }
+    if (!feat_key_ok(f.key)) {
+        NP_WARN("plugins: %s has an invalid key %s, ignored", path, f.key);
+        return;
+    }
+    if (!*f.label) {
+        NP_WARN("plugins: %s has no label, ignored", path);
+        return;
+    }
+    if (strcmp(f.section, "dev") != 0) {
+        NP_WARN("plugins: %s is not in the dev section, ignored", path);
+        return;
+    }
+    if (feat_find(list, *count, f.key)) {
+        NP_WARN("plugins: %s repeats key %s, ignored", path, f.key);
+        return;
+    }
+    if (*count >= NP_FEAT_MAX) {
+        NP_WARN("plugins: %s is over the %d plugin limit, ignored", path, NP_FEAT_MAX);
+        return;
+    }
+    list[(*count)++] = f;
+}
+
+static int feat_load(const char *home, np_feat_t *list) {
+    char dir[2048];
+    struct dirent *de;
+    DIR *d;
+    int count = 0;
+    char **names = NULL;
+    int nnames = 0;
+
+    if (snprintf(dir, sizeof(dir), "%s/" NP_FEAT_DIR, home) >= (int)sizeof(dir)) return 0;
+    if ((d = opendir(dir))) {
+        while ((de = readdir(d))) {
+            char **grown;
+            if (de->d_name[0] == '.' || strchr(de->d_name, '\n')) continue;
+            if (!has_suffix(de->d_name, ".conf")) continue;
+            grown = realloc(names, (size_t)(nnames + 1) * sizeof(*names));
+            if (!grown) break;
+            names = grown;
+            names[nnames] = strdup(de->d_name);
+            if (!names[nnames]) break;
+            nnames++;
+        }
+        closedir(d);
+        for (int i = 1; i < nnames; i++)
+            for (int j = i; j > 0 && strcmp(names[j - 1], names[j]) > 0; j--) {
+                char *t = names[j - 1]; names[j - 1] = names[j]; names[j] = t;
+            }
+        for (int i = 0; i < nnames; i++) {
+            char path[4096];
+            if (snprintf(path, sizeof(path), "%s/%s", dir, names[i]) < (int)sizeof(path))
+                feat_read_file(path, list, &count);
+            free(names[i]);
+        }
+        free(names);
+    }
+
+    return count;
+}
+
+static _Thread_local char g_feat_ready[NP_FEAT_MAX * (NP_FEAT_STR + 8) + 4] = "{}";
+static _Thread_local char g_feat_rows[NP_FEAT_MAX * (2 * (3 * NP_FEAT_STR + NP_FEAT_DESC + 64) + 32) + 4] = "[]";
+static _Thread_local int  g_feat_ready_done;
+static _Thread_local int  g_feat_pinned;
+static void feat_build(void);
+
 static const char *marker_text(char c) {
-    if (c == NP_FALLBACK_TOOL[0]) return g_fallback_tool;
-    if (c == NP_FEX_TOOLS[0]) return g_fex_tools;
+    if (c == NP_FALLBACK_TOOL[0]) return input_text(IN_FALLBACK_TOOL);
+    if (c == NP_FEX_TOOLS[0]) return input_text(IN_FEX_TOOLS);
+    if (c == NP_DEFAULTS[0]) return input_text(IN_DEFAULTS);
+    if (c == NP_BUILDS[0]) return input_text(IN_BUILDS);
+    if (c == NP_READY[0] || c == NP_FEATS[0]) {
+        if (!g_feat_ready_done) feat_build();
+        return c == NP_READY[0] ? g_feat_ready : g_feat_rows;
+    }
     return NULL;
 }
 
@@ -179,6 +517,65 @@ static int out_put(np_out_t *o, const char *p, size_t n) {
     return 1;
 }
 
+static int out_jsstr(np_out_t *o, const char *v) {
+    if (!out_put(o, "\"", 1)) return 0;
+    for (const char *p = v; *p; p++) {
+        if (*p == '"' || *p == '\\') { if (!out_put(o, "\\", 1)) return 0; }
+        else if ((unsigned char)*p < 0x20) continue;
+        if (!out_put(o, p, 1)) return 0;
+    }
+    return out_put(o, "\"", 1);
+}
+
+static void feat_build(void) {
+    const char *home = getenv("HOME");
+    np_feat_t list[NP_FEAT_MAX];
+    np_out_t ready = { 0 }, rows = { 0 };
+    int n = 0, wrote = 0;
+
+    g_feat_ready_done = 1;
+    snprintf(g_feat_ready, sizeof(g_feat_ready), "{}");
+    snprintf(g_feat_rows, sizeof(g_feat_rows), "[]");
+    if (!home) return;
+    n = feat_load(home, list);
+    if (!out_put(&ready, "{", 1) || !out_put(&rows, "[", 1)) goto done;
+    for (int i = 0; i < n; i++) {
+        int ok = list[i].nreq == 0;
+        char item[NP_FEAT_STR + 32];
+        int len;
+        for (int j = 0; j < list[i].nreq; j++)
+            if (feat_exists(home, list[i].req[j])) { ok = 1; break; }
+        len = snprintf(item, sizeof(item), "%s\"%s\":%d", i ? "," : "", list[i].key, ok);
+        if (len < 0 || len >= (int)sizeof(item) || !out_put(&ready, item, (size_t)len)) goto done;
+
+        if (wrote++ && !out_put(&rows, ",", 1)) goto done;
+        if (!out_put(&rows, "{k:", 3) || !out_jsstr(&rows, list[i].key)) goto done;
+        if (!out_put(&rows, ",l:", 3) || !out_jsstr(&rows, list[i].label)) goto done;
+        if (!out_put(&rows, ",on:", 4) || !out_jsstr(&rows, list[i].on)) goto done;
+        if (!out_put(&rows, ",off:", 5) || !out_jsstr(&rows, list[i].off)) goto done;
+        if (!out_put(&rows, ",dep:", 5) || !out_jsstr(&rows, list[i].depends)) goto done;
+        if (!out_put(&rows, ",d:", 3) || !out_jsstr(&rows, list[i].desc)) goto done;
+        if (!out_put(&rows, "}", 1)) goto done;
+    }
+    if (!out_put(&ready, "}", 1) || !out_put(&rows, "]", 1)) goto done;
+    if (ready.len < sizeof(g_feat_ready) && rows.len < sizeof(g_feat_rows)) {
+        snprintf(g_feat_ready, sizeof(g_feat_ready), "%.*s", (int)ready.len, ready.buf);
+        snprintf(g_feat_rows, sizeof(g_feat_rows), "%.*s", (int)rows.len, rows.buf);
+    } else {
+        NP_WARN("plugins: too large to show, all ignored");
+    }
+done:
+    free(ready.buf);
+    free(rows.buf);
+}
+
+void np_webpatch_set_features(const char *ready, const char *rows) {
+    snprintf(g_feat_ready, sizeof(g_feat_ready), "%s", ready ? ready : "{}");
+    snprintf(g_feat_rows, sizeof(g_feat_rows), "%s", rows ? rows : "[]");
+    g_feat_ready_done = 1;
+    g_feat_pinned = 1;
+}
+
 static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     for (const char *r = replace; *r; r++) {
         const char *text = marker_text(*r);
@@ -250,12 +647,15 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "||k===\"HADRON_GRAPHICS\"&&L.g(k)===\"d3dmetal\");" \
     "ks.length&&L.s(ks.map(k=>[k,\"\"]))}"
 
-// Steam's new Compatibility UI picks a tool through its own query; wrapping its setter
-// lets a FEX pick drop the settings FEX cannot use, as the old selector's hook does.
+// The picker refetches after the client's state notification, by which point the mapping
+// has changed, so a new selection here is when the prefix row asks again.
 #define NP_TOOL_QUERY \
-    "(r,id)=>[r[0],v=>{r[1](v);const d=r[0].data;if(!id||!d)return;" \
+    "(r,id)=>{const q=r[0].data;if(id&&q){const k=q.selected_tool_identifier+\"|\"+q.default_tool_identifier," \
+    "M=globalThis.NPHadronSeen||(globalThis.NPHadronSeen=new Map);" \
+    "M.has(id)&&M.get(id)!==k&&queueMicrotask(()=>globalThis.dispatchEvent?.(new CustomEvent(\"nphadronstate\",{detail:id})));" \
+    "M.set(id,k)}return[r[0],v=>{r[1](v);const d=r[0].data;if(!id||!d)return;" \
     "const n=v||d.default_tool_identifier||\"" NP_FALLBACK_TOOL "\",a=(d.aliases||[]).find(x=>x.alias===n)," \
-    "t=globalThis.appDetailsStore?.GetAppDetails(id);t&&NPHadronPick(t,a?a.current_tool_name:n)}]"
+    "t=globalThis.appDetailsStore?.GetAppDetails(id);t&&NPHadronPick(t,a?a.current_tool_name:n)}]}"
 
 // Hadron options panel. Not in great shape, but it'll do
 #define NP_WEB_IS_ZH \
@@ -282,43 +682,139 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
 #define NP_LIBRARY_WINDOWS_HINT NP_WEB_TEXT( \
     "Show only games that run on Windows and do not have a macOS version", \
     "Show only games that run on Windows and do not have a macOS version", \
-    "Show only games that run on Windows and do not have a macOS version")
+    "Mostra solo i giochi che funzionano su Windows e non hanno una versione macOS")
 
 #define NP_LIBRARY_WINDOWS_SUMMARY NP_WEB_TEXT( \
     "Runs on Windows, no Mac OS version", \
     "Runs on Windows, no Mac OS version", \
-    "Runs on Windows, no Mac OS version")
+    "Funziona su Windows, nessuna versione macOS")
+
+// Rebuild row in the options panel. Chinese waits for a translator.
+// The row is redrawn on every poll, so the bar keeps its phase from when the rebuild started
+// instead of restarting on each redraw.
+#define NP_PREFIX_NEED NP_WEB_TEXT("Switching to this compatibility tool requires a prefix rebuild. Rebuild now?", "Switching to this compatibility tool requires a prefix rebuild. Rebuild now?", "Per passare a questo strumento di compatibilit\\u00e0 bisogna ricostruire il prefisso. Ricostruirlo ora?")
+#define NP_PREFIX_BACKUP NP_WEB_TEXT("Backup & Rebuild Prefix", "Backup & Rebuild Prefix", "Backup e ricostruisci prefisso")
+#define NP_PREFIX_REBUILD NP_WEB_TEXT("Rebuild Prefix", "Rebuild Prefix", "Ricostruisci prefisso")
+#define NP_PREFIX_RUNNING NP_WEB_TEXT("Quit the game to rebuild.", "Quit the game to rebuild.", "Chiudi il gioco per ricostruire il prefisso.")
+#define NP_PREFIX_SETUP NP_WEB_TEXT("Rebuilding prefix\\u2026", "Rebuilding prefix\\u2026", "Ricostruzione del prefisso\\u2026")
+#define NP_PREFIX_COPY NP_WEB_TEXT("Copying your files\\u2026", "Copying your files\\u2026", "Copia dei tuoi file\\u2026")
+#define NP_PREFIX_FINISH NP_WEB_TEXT("Finishing\\u2026", "Finishing\\u2026", "Ultimi passaggi\\u2026")
+#define NP_PREFIX_DONE NP_WEB_TEXT("Prefix rebuilt.", "Prefix rebuilt.", "Prefisso ricostruito.")
+#define NP_PREFIX_DONE_BACKUP NP_WEB_TEXT("Prefix rebuilt. A backup of the original is in Hadron's Prefixes view.", "Prefix rebuilt. A backup of the original is in Hadron's Prefixes view.", "Prefisso ricostruito. Il backup dell'originale \\u00e8 nella sezione Prefissi di Hadron.")
+#define NP_PREFIX_FAILED NP_WEB_TEXT("Prefix rebuild failed!", "Prefix rebuild failed!", "Ricostruzione del prefisso non riuscita.")
+#define NP_PREFIX_LOG NP_WEB_TEXT("Open Log", "Open Log", "Apri registro")
+#define NP_PREFIX_APP NP_WEB_TEXT("Couldn't find the Hadron app. Move Hadron to Applications, open it and click Install again.", "Couldn't find the Hadron app. Move Hadron to Applications, open it and click Install again.", "App Hadron non trovata. Sposta Hadron in Applicazioni, aprila e fai di nuovo clic su Installa.")
+
+#define NP_PREFIX_ROW \
+    "globalThis.NPHadronPrefixRow=(e,id)=>{if(e.npApp===id)return;e.npStop&&e.npStop();e.npApp=id;let ter" \
+    "m='',busy=0,timer=0,t0=0,stopped=0,live=0;const T={need:" \
+    NP_PREFIX_NEED \
+    ",backup:" \
+    NP_PREFIX_BACKUP \
+    ",rebuild:" \
+    NP_PREFIX_REBUILD \
+    ",running:" \
+    NP_PREFIX_RUNNING \
+    ",setup:" \
+    NP_PREFIX_SETUP \
+    ",copy:" \
+    NP_PREFIX_COPY \
+    ",finish:" \
+    NP_PREFIX_FINISH \
+    ",done:" \
+    NP_PREFIX_DONE \
+    ",doneBackup:" \
+    NP_PREFIX_DONE_BACKUP \
+    ",failed:" \
+    NP_PREFIX_FAILED \
+    ",log:" \
+    NP_PREFIX_LOG \
+    ",app:" \
+    NP_PREFIX_APP \
+    "},el=(tag,cls,txt)=>{const n=e.ownerDocument.createElement(tag);if(cls)n.className=cls;if(txt!=n" \
+    "ull)n.textContent=txt;return n},btn=(txt,main,off,on)=>{const b=el('button','NPHadronBtn'+(main?' NPHadronMain':''),txt);b.disabled=!!off;b.onclick=on;return b},call=r=>NPHadronRoute(r,id).then(j=>JSON.pa" \
+    "rse(j||'{}')),refresh=()=>{if(stopped)return;if(!e.isConnected||e.npApp!==id)return stop();return NPHadronRoute('Hadron.PrefixState#1',id).t" \
+    "hen(j=>draw(JSON.parse(j))).catch(()=>{if(stopped||!e.isConnected||e.npApp!==id)return;clearTimeout(timer);if(busy||live)timer=setTimeout(refresh,500);else e.style.display='none'})},start=r=>{term='';busy=1;t0=Date.now();draw(null);cal" \
+    "l(r).then(j=>{j.error==='spawn'&&(term='failed')},()=>0).finally(()=>{busy=0;refresh()})},pair=off=>{const r=el('div','NPHadronBtns');r.app" \
+    "end(btn(T.backup,1,off,()=>start('Hadron.BackupAndRebuildPrefix#1')),btn(T.rebuild,0,off,()=>" \
+    "start('Hadron.RebuildPrefix#1')));return r},draw=s=>{if(stopped||!e.isConnected||e.npApp!==id)return;clearTimeout(timer);live=0;const ph=s?s.rebuild" \
+    ":'',k=[];if(ph==='done'||ph==='done-backup'||ph==='failed')term=ph;s&&s.needsRebuild&&term!=='failed'&&(term='');if(busy||ph==='setup'||ph==='" \
+    "copy'||ph==='finish'){k.push(el('div','',ph==='copy'?T.copy:ph==='finish'?T.finish:T.setup));con" \
+    "st b=el('div','NPHadronBar');t0||(t0=Date.now());const m=el('div','');m.style.animationDelay=-((Date.now()-t0)%1200)+'ms';b.append(m);k.push(b);live=1;timer=setTimeout(refresh,500)}else if((t0=0)||" \
+    "term==='failed'){k.push(el('div','',T.failed));const r=el('div','NPHadronBtns');r.append(btn(T.log,0" \
+    ",0,()=>call('Hadron.OpenPrefixLog#1').catch(()=>0)));k.push(r);s&&s.needsRebuild&&s.app&&!s.r" \
+    "unning&&k.push(pair(0))}else if(term)k.push(el('div','',term==='done-backup'?T.doneBackup:T.done" \
+    "));else if(s&&s.needsRebuild){if(!s.app)k.push(el('div','',T.app));else{k.push(el('div','',s.run" \
+    "ning?T.running:T.need),pair(s.running));s.running&&(timer=setTimeout(refresh,3e3))}}e.replaceChi" \
+    "ldren(...k);e.style.display=k.length?'':'none'};e.style.flexDirection='column';e.style.gap='8px'" \
+    ";e.style.display='none';const on=v=>{if(!e.isConnected)return e.npStop();v.detail===id&&!busy&&(" \
+    "term='',refresh())};const stop=e.npStop=()=>{stopped=1;clearTimeout(timer);observer?.disconnect();globalThis.removeEventListener?.('nphadronstat" \
+    "e',on)};const observer=globalThis.MutationObserver?new globalThis.MutationObserver(()=>{if(!e.isConnected)stop()}):null;observer?.observe(e.ownerDocument,{childList:true,subtree:true});globalThis.addEventListener?.('nphadronstate',on);refresh()};"
+
 
 #define NP_OPTIONS_CSS \
     "\".NPHadronPanel{margin-top:10px}" \
     ".NPHadronPanel .NPHadronRow{display:flex;flex-direction:row;padding:9px;margin:0;" \
-    "color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
+    "font-size:14px;line-height:18px;color:#dfe3e6;background:rgba(59,63,72,.5);border-radius:3px}" \
     ".NPHadronPanel .NPHadronRow:hover{box-shadow:0 6px 8px 0 rgba(0,0,0,.16)}" \
-    ".NPNoBottomGap{margin-bottom:0}\""
+    ".NPHadronPanel .NPHadronRowDesc{flex-wrap:wrap;align-items:center}" \
+    ".NPHadronPanel .NPHadronRowDesc>:last-child{flex-basis:100%}" \
+    ".NPNoBottomGap{margin-bottom:0}" \
+    ".DesktopUI .NPHadronSetBtn,.NPHadronSetBtn.DesktopUI{color:#dfe3e6;background-color:rgba(59,63,72,.5);" \
+    "padding:8px 14px;font-size:13px;line-height:18px}" \
+    "@media(prefers-contrast: more){.DesktopUI .NPHadronSetBtn,.NPHadronSetBtn.DesktopUI{background:#000;color:#fff}}" \
+    ".NPHadronBtns{display:flex;gap:8px}" \
+    ".NPHadronBtn{background:#3d4450;color:#fff;border:none;border-radius:2px;padding:6px 14px;" \
+    "font-size:14px;cursor:pointer}.NPHadronBtn:hover{background:#4c5361}" \
+    ".NPHadronBtn.NPHadronMain{background:#1a9fff}.NPHadronBtn.NPHadronMain:hover{background:#47b4ff}" \
+    ".NPHadronBtn:disabled{opacity:.5;cursor:default}" \
+    ".NPHadronBtn:focus-visible{outline:2px solid #fff;outline-offset:1px}" \
+    ".NPHadronBar{position:relative;align-self:stretch;width:100%;height:4px;overflow:hidden;" \
+    "border-radius:2px;background:rgba(255,255,255,.12)}" \
+    ".NPHadronBar>div{position:absolute;top:0;bottom:0;left:-30%;width:30%;background:#1a9fff;" \
+    "animation:NPHadronSlide 1.2s linear infinite}" \
+    "@keyframes NPHadronSlide{from{left:-30%}to{left:100%}}\""
 
-// HADRON_GRAPHICS picks the Direct3D backend, unset is dxmt. The DXMT rows go with
-// DXMT, so leaving it clears them. HADRON_DDRAW adds cnc-ddraw for DirectDraw games.
-// A FEX tool runs arm64 Wine, which has DXVK 1.10 and WineD3D only and never runs
-// under Rosetta, so it is offered those and shows the others as the DXVK 1.10 it gets.
-#define NP_OPTIONS_BODY(ARG, RT, BARREL) \
-    ARG "=>{" \
-    "const t=" ARG ".details,o=t.strLaunchOptions||\"\"," \
-    "fex=" NP_FEX_TOOLS ".indexOf(t.strCompatToolName||\"" NP_FALLBACK_TOOL "\")>=0," \
-    "npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
-    "L=NPHadronLaunch(o,t.unAppID),g=L.g,s=L.s," \
-    "T=(ks,l,on,off)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"NPHadronRow\",label:l," \
-    "checked:g(ks[0])===on," \
-    "onChange:v=>s(ks.map(k=>[k,v?on:(off||\"\")]))},ks[0])," \
-    "bv=g(\"HADRON_GRAPHICS\")||\"dxmt\"," \
+#define NP_BARREL(X) X(XY) X(m) X(Yh) X($n) X(Vb) X(D0)
+#define NP_BARREL_C(n) #n,
+#define NP_BARREL_JS(n) "\"" #n "\","
+#define NP_BARREL_NAMES { NP_BARREL(NP_BARREL_C) }
+#define NP_BARREL_READY(B) "[" NP_BARREL(NP_BARREL_JS) "].every(n=>" B "[n])"
+
+#define NP_FACTOR_ENTRY "e=>/^[ \\t\\r]*d3d11\\.metalSpatialUpscaleFactor[ \\t\\r]*=/.test(e)"
+
+#define NP_SAVED_DEFAULTS "(globalThis.NPHadronDefaultsData||(globalThis.NPHadronDefaultsData=" NP_DEFAULTS "))"
+#define NP_SAVED_BUILDS "(globalThis.NPHadronBuilds||(globalThis.NPHadronBuilds=" NP_BUILDS "))"
+
+// FEX runs arm64 Wine, which has no D3DMetal and never runs under Rosetta.
+#define NP_PANEL(RT, BARREL) \
+    "({fex,get:G,saved:readSaved,set:s,clearUnused,head,dflt,dev})=>{" \
+    "const npZh=" NP_WEB_IS_ZH ",npIt=" NP_WEB_IS_IT ",npL=(en,zh,it)=>npZh?zh:npIt?it:en," \
+    "NPHadronReady=" NP_READY ",NPHadronFeat=" NP_FEATS "," \
+    "on1=(k,n=0)=>{const p=NPHadronFeat.find(x=>x.k===k);" \
+    "return!!p&&n<32&&NPHadronReady[k]!==0&&G(k)===p.on&&(!p.dep||on1(p.dep,n+1))}," \
+    "P=f=>{const rd=NPHadronReady[f.k]!==0;" \
+    "return(0," RT ".jsx)(" BARREL ".Yh," \
+    "{className:\"NPHadronRow\"+(f.d?\" NPHadronRowDesc\":\"\")," \
+    "label:rd?f.l:f.l+npL(\" (not installed)\",\" (未安装)\",\" (not installed)\"),disabled:!rd," \
+    "description:f.d||undefined," \
+    "checked:rd&&G(f.k)===f.on," \
+    "onChange:v=>s([[f.k,v?f.on:(f.off||\"\")]])},f.k)}," \
+    "w=(k,v,none)=>dflt&&v===(dflt(k)||none)?\"\":v," \
+    "T=(k,l,on=\"1\")=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"NPHadronRow\",label:l," \
+    "checked:on===G(k),onChange:v=>s([[k,w(k,v?on:\"0\",\"0\")]])},k)," \
+    "D=(k,l)=>(0," RT ".jsx)(" BARREL ".Yh,{className:\"NPHadronRow\",label:l," \
+    "checked:\"0\"!==G(k),onChange:v=>s([[k,w(k,v?\"1\":\"0\",\"1\")]])},k)," \
+    "none=fex?\"dxvk1\":\"dxmt\",bv=G(\"HADRON_GRAPHICS\")||none," \
     "b=fex&&[\"dxmt\",\"d3dmetal\",\"dxvk\"].indexOf(bv)>=0?\"dxvk1\":bv," \
     "dx=\"dxmt\"===b," \
-    "sw=\"1\"===g(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
-    "F=\"d3d11.metalSpatialUpscaleFactor=\"," \
-    "fe=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
-    "fk=e=>/^[ \\t\\r]*d3d11\\.metalSpatialUpscaleFactor[ \\t\\r]*=/.test(e)," \
+    "sw=\"1\"===G(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")," \
+    "F=\"d3d11.metalSpatialUpscaleFactor=\",fk=" NP_FACTOR_ENTRY "," \
+    "fe=readSaved(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
     "fx=v=>fe.filter(e=>!fk(e)).concat(v?[F+v]:[]).join(\";\")," \
-    "fv=(fe.filter(fk).pop()||\"=2\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0]," \
-    "fn=Math.max(isNaN(+fv)?2:+fv,1)," \
+    "pf=c=>{const v=(c.split(\";\").filter(fk).pop()||\"=2\").replace(/^[^=]*=/,\"\").replace(/\"/g,\"\").trim().split(/\\s/)[0];" \
+    "return Math.max(isNaN(+v)?2:+v,1)}," \
+    "fn=pf(G(\"DXMT_CONFIG\"))," \
     "U=[{data:\"\",label:npL(\"Off\",\"关闭\",\"Disattivato\")}," \
     "{data:\"1.5\",label:\"1.5x\"}," \
     "{data:\"1.72\",label:\"1.72x\"}," \
@@ -329,50 +825,121 @@ static int out_expand(np_out_t *o, const char *replace, const np_cap_t *caps) {
     "{data:\"dxvk\",label:\"DXVK 3.1\"}," \
     "{data:\"dxvk1\",label:\"DXVK 1.10\"}," \
     "{data:\"wined3d\",label:npL(\"WineD3D (Wine's own)\",\"WineD3D（Wine 自带）\",\"WineD3D (integrato in Wine)\")}]" \
-    ".filter(x=>!fex||x.data===\"dxvk1\"||x.data===\"wined3d\");" \
-    "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
-    "&&!t.strCompatToolName)return null;" \
+    ".filter(x=>!fex||x.data===\"dxvk1\"||x.data===\"wined3d\")," \
+    "pick=f=>\"1\"===f(\"DXMT_METALFX_SPATIAL_SWAPCHAIN\")?(U.find(u=>u.data&&+u.data===pf(f(\"DXMT_CONFIG\")||\"\"))" \
+    "||{data:String(pf(f(\"DXMT_CONFIG\")||\"\"))}).data:\"\";" \
     "return(0," RT ".jsx)(\"div\",{className:\"NPHadronPanel\",children:(0," RT ".jsxs)(" RT ".Fragment,{children:[" \
-    "(0," RT ".jsx)(\"style\",{children:" NP_OPTIONS_CSS "})," \
+    "(0," RT ".jsx)(\"style\",{children:" NP_OPTIONS_CSS "}),head," \
     "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Graphics\",\"图形\",\"Grafica\"),children:[" \
     "(0," RT ".jsx)(" BARREL ".m,{rgOptions:B,selectedOption:b," \
-    "onChange:v=>s([[\"HADRON_GRAPHICS\",\"dxmt\"===v.data?\"\":v.data]]" \
-    ".concat(\"dxmt\"===v.data?[]:[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"]," \
+    "onChange:v=>s([[\"HADRON_GRAPHICS\",w(\"HADRON_GRAPHICS\",v.data,none)]]" \
+    ".concat(!clearUnused||\"dxmt\"===v.data?[]:[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"]," \
     "[\"DXMT_CONFIG\",fx(\"\")],[\"DXMT_ENABLE_NVEXT\",\"\"]]))})," \
-    "T([\"MTL_HUD_ENABLED\"],npL(\"Metal HUD\",\"Metal 性能监视器\",\"Metal HUD\"),\"1\")," \
-    "dx&&T([\"DXMT_ENABLE_NVEXT\"],\"DLSS\",\"1\")," \
-    "!fex&&T([\"ROSETTA_ADVERTISE_AVX\"],npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"),\"1\",\"0\")," \
-    "T([\"HADRON_RETINA\"],npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"),\"1\",\"0\")," \
-    "T([\"HADRON_DDRAW\"],npL(\"cnc-ddraw (old DirectDraw games)\",\"cnc-ddraw（旧版 DirectDraw 游戏）\",\"cnc-ddraw (vecchi giochi DirectDraw)\"),\"cnc-ddraw\")" \
+    "T(\"MTL_HUD_ENABLED\",npL(\"Metal HUD\",\"Metal 性能监视器\",\"Metal HUD\"))," \
+    "dx&&T(\"DXMT_ENABLE_NVEXT\",\"DLSS\")," \
+    "!fex&&D(\"ROSETTA_ADVERTISE_AVX\",npL(\"Advertise AVX2 to Rosetta\",\"向 Rosetta 声明 AVX2 支持\",\"Segnala AVX2 a Rosetta\"))," \
+    "T(\"HADRON_RETINA\",npL(\"High Resolution\",\"高分辨率\",\"Alta risoluzione\"))," \
+    "T(\"HADRON_DDRAW\",npL(\"cnc-ddraw (old DirectDraw games)\",\"cnc-ddraw（旧版 DirectDraw 游戏）\",\"cnc-ddraw (vecchi giochi DirectDraw)\"),\"cnc-ddraw\")" \
     "]},\"gfx\")," \
     "dx&&(0," RT ".jsx)(" BARREL ".XY," \
     "{label:npL(\"MetalFX Upscaling (Samples from the resolution the game is set to)\"," \
-    "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione impostata nel gioco)\")," \
+    "\"MetalFX 超分辨率（以游戏设置的分辨率为采样来源）\",\"Upscaling MetalFX (ingrandisce l'immagine dalla risoluzione del gioco)\")," \
     "children:(0," RT ".jsx)(" BARREL ".m,{rgOptions:U," \
     "selectedOption:sw?(U.find(u=>u.data&&+u.data===fn)||{data:String(fn)}).data:\"\"," \
-    "onChange:v=>s([[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
-    "(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Controllers (May break Steam Input. Not recommended)\"," \
-    "\"控制器（可能导致 Steam Input 失效，不推荐）\"," \
-    "\"Controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"),children:" \
-    "T([\"HADRON_RAW_CONTROLLERS\"],npL(\"Let games read controllers directly\"," \
-    "\"允许游戏直接读取控制器\",\"Lascia che i giochi leggano direttamente i controller\"),\"1\",\"\")},\"ctl\")" \
+    "onChange:v=>s(dflt&&v.data===pick(k=>dflt(k)||\"\")" \
+    "?[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",\"\"],[\"DXMT_CONFIG\",fx(\"\")]]" \
+    ":[[\"DXMT_METALFX_SPATIAL_SWAPCHAIN\",v.data?\"1\":\"0\"],[\"DXMT_CONFIG\",fx(v.data)]])})},\"usf\")," \
+    "(0," RT ".jsxs)(" BARREL ".XY,{label:npL(\"Controllers\",\"控制器\",\"Controller\"),children:[" \
+    "T(\"HADRON_RAW_CONTROLLERS\",npL(\"Let games read controllers directly (May break Steam Input. Not recommended)\"," \
+    "\"允许游戏直接读取控制器（可能导致 Steam Input 失效，不推荐）\"," \
+    "\"Lascia che i giochi leggano direttamente i controller (pu\\u00f2 interferire con Steam Input, sconsigliato)\"))" \
+    "]},\"ctl\")," \
+    "fex&&(0," RT ".jsx)(" BARREL ".XY,{label:\"FEX\"," \
+    "children:D(\"FEX_X87REDUCEDPRECISION\"," \
+    "\"Reduced x87 Precision (Improves game performance)\")},\"fex\")," \
+    "dev&&NPHadronFeat.length?(0," RT ".jsx)(" BARREL ".XY,{label:npL(\"Developer\",\"开发者\",\"Developer\")," \
+    "children:NPHadronFeat.filter(f=>!f.dep||on1(f.dep)).map(P)},\"dev\"):null" \
     "]})})}"
 
-// The page's names for its runtime and component barrel are captures, so the body takes
-// them through functions and cannot be shadowed by the page's own one-letter names.
-#define NP_OPTIONS_CAPTURE(RT, BARREL) \
-    "((npReact,npUI)=>" NP_OPTIONS_BODY("np", "npReact()", "npUI()") ")(()=>" RT ",()=>" BARREL ")"
+#define NP_OPTIONS_BODY(RT, BARREL) \
+    "np=>{" \
+    "const t=np.details,o=t.strLaunchOptions||\"\",tn=t.strCompatToolName||\"" NP_FALLBACK_TOOL "\"," \
+    "fex=" NP_FEX_TOOLS ".indexOf(tn)>=0," \
+    "L=NPHadronLaunch(o,t.unAppID),g=L.g,has=k=>L.k.includes(k)," \
+    "lost=globalThis.NPHadronDefaultsLost,DF=lost?{}:(" NP_SAVED_BUILDS ".find(x=>x.id===tn)||{}).override||" NP_SAVED_DEFAULTS "[fex?\"fex\":\"rosetta\"]||{}," \
+    "fk=" NP_FACTOR_ENTRY "," \
+    "own=g(\"DXMT_CONFIG\").split(\";\").filter(e=>e.trim())," \
+    "G=k=>\"DXMT_CONFIG\"===k?(own.some(fk)?g(k):DF[k]||\"\"):has(k)?g(k):DF[k]||\"\";" \
+    "if(t.unAppID<2147483648&&(t.vecPlatforms||[]).indexOf(\"osx\")>=0" \
+    "&&!t.strCompatToolName)return null;" \
+    "return NPHadronPanel({fex,get:G,saved:g,set:L.s,clearUnused:1,dev:1,dflt:lost?null:k=>DF[k],head:" \
+    "typeof NPHadronPrefixRow==\"function\"&&(0," RT ".jsx)(\"div\",{className:\"NPHadronRow\",ref:e=>e&&NPHadronPrefixRow(e,t.unAppID)},\"npstate\")" \
+    "})}"
+
+// React breaks if the hook count changes between renders, so the hooks wait in their own component
+// until Steam's globals exist.
+#define NP_DEFAULTS_PAGE_BODY(RT, BARREL) \
+    "(()=>{let Q=Promise.resolve(),gen=0,warned=0,lost=0;" \
+    "const ser=d=>Object.keys(d).map(k=>k+\"=\"+d[k]).join(\"\\n\"),I=()=>{" \
+    "const use=globalThis.NPHadronUseState,eff=globalThis.NPHadronUseEffect,send=globalThis.NPHadronSpecifyRoute;" \
+    "const BL=" NP_SAVED_BUILDS ",only=BL.length&&BL.every(x=>x.runner===BL[0].runner)?BL[0].runner:\"\"," \
+    "d0=BL.find(x=>x.id===globalThis.NPHadronDefaultTool)||BL[0]," \
+    "[r,sr]=use(d0&&\"fex\"===d0.runner?1:0),[id,si]=use(d0?d0.id:\"\"),[,bump]=use(0),[ok,sok]=use(\"\"),all=" NP_SAVED_DEFAULTS "," \
+    "fex=1===r,n=fex?\"fex\":\"rosetta\",b=BL.find(x=>x.id===id)," \
+    "set=(nn,c)=>c?c.override||all[nn]||{}:all[nn]||{},DF=set(n,b),G=k=>DF[k]||\"\"," \
+    "q=f=>{Q=Q.then(f).catch(e=>console.error(\"Hadron: the defaults were not saved\",e))}," \
+    "clr=()=>{gen++;sok(\"\")}," \
+    "done=(x,f)=>{if(x.BSuccess()){f();bump(c=>c+1);return 1}" \
+    "console.error(\"Hadron: the defaults were not saved, result \"+x.GetEResult());return 0}," \
+    "put=(rv,nn,c,d)=>(c?send(\"Hadron.SetToolDefaults#1\",0,c.id+\"\\n\"+ser(d))" \
+    ":send(\"Hadron.SetDefaults#1\",rv,ser(d))).then(x=>done(x,()=>{c?c.override=d:all[nn]=d}))," \
+    "s=ps=>{const rv=r,nn=n,c=b;clr();q(()=>{const d=Object.assign({},set(nn,c));" \
+    "ps.forEach(p=>{p[1]&&\"auto\"!==p[1]?d[p[0]]=p[1]:delete d[p[0]]});return put(rv,nn,c,d)})}," \
+    "kind=only===n?\"Hadron\":fex?\"FEX\":\"Rosetta\"," \
+    "apply=()=>{const nn=n,c=b,kk=kind;clr();const my=gen;" \
+    "q(()=>{const d=Object.assign({},c.override||all[nn]||{});" \
+    "return send(\"Hadron.ApplyToolDefaults#1\",0,c.id).then(x=>{" \
+    "if(" NP_STR(NP_COMPATSVC_PARTLY_APPLIED) "===x.GetEResult()){all[nn]=d;lost=1;globalThis.NPHadronDefaultsLost=1;bump(c=>c+1);console.error(\"Hadron: Apply left some versions " \
+    "with their own settings, so Default Compatibility Settings are hidden until Steam restarts\");return}" \
+    "done(x,()=>{all[nn]=d;BL.forEach(y=>{y.runner===nn&&(y.override=null)})})" \
+    "&&my===gen&&sok(" NP_WEB_IS_IT "?\"Applicate. Ora tutti gli strumenti di compatibilit\\u00e0 \"+kk+\" usano queste impostazioni.\":\"Applied. Every \"+kk+\" Compatibility Tool now uses these settings.\")})})}," \
+    "pickTool=t=>{const p=BL.find(x=>x.id===t);if(p){si(p.id);sr(\"fex\"===p.runner?1:0);clr()}}," \
+    "btn=(k,l,t,f,dsc)=>(0," RT ".jsx)(" BARREL ".D0,{label:l,description:dsc," \
+    "childrenContainerWidth:\"min\",children:(0," RT ".jsx)(" BARREL ".$n,{className:\"NPHadronSetBtn\"," \
+    "onClick:f,children:t})},k);" \
+    "eff(()=>{const on=e=>pickTool(e.detail);globalThis.addEventListener?.(\"nphadrondefaulttool\",on);" \
+    "return()=>globalThis.removeEventListener?.(\"nphadrondefaulttool\",on)},[]);if(lost)return null;" \
+    "return NPHadronPanel({fex,get:G,saved:G,set:s,head:(0," RT ".jsxs)(" BARREL ".XY,{label:" NP_WEB_TEXT("Default Compatibility Settings", "Default Compatibility Settings", "Impostazioni di compatibilit\\u00e0 predefinite") ",children:[" \
+    "BL.length?(0," RT ".jsx)(" BARREL ".Vb,{label:" NP_WEB_TEXT("Compatibility tool", "Compatibility tool", "Strumento di compatibilit\\u00e0") "," \
+    "bMatchWidth:!1,rgOptions:BL.map(x=>({data:x.id,label:x.label}))," \
+    "selectedOption:b?b.id:\"\",onChange:v=>{const p=BL.find(x=>x.id===v.data);if(!p)return;" \
+    "si(p.id);sr(p.runner===\"fex\"?1:0);clr()}},\"version\"):null," \
+    "b?btn(\"apply\",(" NP_WEB_IS_IT "?\"Applica come predefinite a tutti gli strumenti di compatibilit\\u00e0 \"+kind:\"Apply as defaults for all \"+kind+\" Compatibility Tools\")," NP_WEB_TEXT("Apply", "Apply", "Applica") ",apply,ok||void 0):null" \
+    "]},\"defaults\")})};" \
+    "return()=>{const up=typeof globalThis.NPHadronUseState==\"function\"&&typeof globalThis.NPHadronUseEffect==\"function\"" \
+    "&&typeof globalThis.NPHadronSpecifyRoute==\"function\";" \
+"const dd=" NP_SAVED_DEFAULTS ";if(null===dd.rosetta||null===dd.fex){" \
+    "warned||(warned=1,console.error(\"Hadron: the saved defaults could not be read, so Default Compatibility Settings are hidden\"));" \
+    "return null}" \
+    "if(up&&" NP_BARREL_READY(BARREL) ")return(0," RT ".jsx)(I,{});" \
+    "up&&!warned&&(warned=1,console.error(\"Hadron: Steam renamed its settings components, so Default Compatibility Settings are hidden\"));" \
+    "return null}})()"
+#define NP_CAPTURE(BODY, RT, BARREL) \
+    "((npReact,npUI)=>" BODY("npReact()", "npUI()") ")(()=>" RT ",()=>" BARREL ")"
 
 #define NP_OPTIONS_COMPONENT \
     "NPHadronLaunch=" NP_LAUNCH ",NPHadronPick=" NP_PICK "," \
-    "NPHadronOpts=" NP_OPTIONS_CAPTURE(NP_C4, NP_C5) ","
+    "NPHadronPanel=" NP_CAPTURE(NP_PANEL, NP_C4, NP_C5) "," \
+    "NPHadronOpts=" NP_CAPTURE(NP_OPTIONS_BODY, NP_C4, NP_C5) ","
 
 // Valve is testing a new compatibility page UI, this logic relates to supporting that
 #define NP_OPTIONS_STATEMENT \
     "var NPHadronLaunch=" NP_LAUNCH ";" \
     "var NPHadronPick=" NP_PICK ";" \
     "var NPHadronToolQuery=" NP_TOOL_QUERY ";" \
-    "var NPHadronOpts=" NP_OPTIONS_CAPTURE(NP_C3, NP_C4) ";"
+    "var NPHadronPanel=" NP_CAPTURE(NP_PANEL, NP_C3, NP_C4) ";" \
+    "var NPHadronOpts=" NP_CAPTURE(NP_OPTIONS_BODY, NP_C3, NP_C4) ";" \
+    "var NPHadronDefaultsPage=" NP_CAPTURE(NP_DEFAULTS_PAGE_BODY, NP_C3, NP_C4) ";"
 
 // 1.0.x saved launch settings without %command%, this migrates them.
 #define NP_LAUNCH_MIGRATION_RULE \
@@ -467,12 +1034,63 @@ static const np_gate_t g_gates_selecttool[] = {
       "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_ShowAll\"),feature:" NP_C8 ".OK})]}),"
       "(0," NP_C3 ".jsx)(NPHadronOpts,{details:" NP_C2 ".details})]})}", 1, 0 },
+    // SteamPlay settings section
+    { "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".jsxs)(" NP_C4 ".XY,{label:(0," NP_C5 ".we)"
+      "(\"#Settings_SteamPlay_SteamPlay\"),children:[(0," NP_C3 ".jsx)(" NP_C6 ",{}),"
+      "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
+      "(\"#Settings_SteamPlay_ShowAll\"),feature:" NP_C8 ".OK})]})}",
+      "function " NP_C1 "(" NP_C2 "){return(0," NP_C3 ".jsxs)(" NP_C3 ".Fragment,{children:["
+      "(0," NP_C3 ".jsxs)(" NP_C4 ".XY,{label:(0," NP_C5 ".we)"
+      "(\"#Settings_SteamPlay_SteamPlay\"),children:[(0," NP_C3 ".jsx)(" NP_C6 ",{}),"
+      "(0," NP_C3 ".jsx)(" NP_C7 ".G,{setting:\"compat_show_all_tools\",label:(0," NP_C5 ".we)"
+      "(\"#Settings_SteamPlay_ShowAll\"),feature:" NP_C8 ".OK})]}),"
+      "(0," NP_C3 ".jsx)(NPHadronDefaultsPage,{})]})}", 1, NP_GATE_PAGE },
+    // SpecifyCompatTool: hands its transport to NPHadronSpecifyRoute for the defaults routes
+    { "function " NP_C1 "(" NP_C2 "," NP_C3 "){return " NP_C3 "=" NP_C3 "||(0," NP_C4
+      ".OI)().GetDefaultTransport()," NP_C3 "==null?new Promise((" NP_C5 "," NP_C6 ")=>{"
+      "console.error(\"Transport Error: no transport is available for request\"),"
+      NP_C6 "(\"Transport Error: no transport is available for request\")}):" NP_C3
+      ".SendMsg(\"CompatManager.SpecifyCompatTool#1\",(0," NP_C7 ".I8)(" NP_C8 "," NP_C2 "),"
+      NP_C9 ",{ePrivilege:1,eClientExecutionSite:2})}" NP_C10 ".SendMsgSpecifyCompatTool=" NP_C1 ",",
+      "function " NP_C1 "(" NP_C2 "," NP_C3 "){return " NP_C3 "=" NP_C3 "||(0," NP_C4
+      ".OI)().GetDefaultTransport()," NP_C3 "==null?new Promise((" NP_C5 "," NP_C6 ")=>{"
+      "console.error(\"Transport Error: no transport is available for request\"),"
+      NP_C6 "(\"Transport Error: no transport is available for request\")}):" NP_C3
+      ".SendMsg(\"CompatManager.SpecifyCompatTool#1\",(0," NP_C7 ".I8)(" NP_C8 "," NP_C2 "),"
+      NP_C9 ",{ePrivilege:1,eClientExecutionSite:2})}"
+      "globalThis.NPHadronSpecifyRoute=(npRt,npA,npX)=>{const npT=(0," NP_C4 ".OI)().GetDefaultTransport();"
+      "return!/^Hadron\\./.test(npRt)?Promise.reject(\"not a Hadron route\"):"
+      "npT==null?Promise.reject(\"Transport Error: no transport is available for request\"):"
+      "npT.SendMsg(npRt,(0," NP_C7 ".I8)(" NP_C8 ",{appid:npA,tool_name:npX}),"
+      NP_C9 ",{ePrivilege:1,eClientExecutionSite:2})},"
+      NP_C10 ".SendMsgSpecifyCompatTool=" NP_C1 ",", 1, NP_GATE_PAGE },
+    { "const " NP_C1 "=new " NP_C2 ";function " NP_C3 "(" NP_C4 "){const " NP_C5 "=" NP_C6
+      ".useCallback(async()=>{const " NP_C7 "=await " NP_C8 ".GetCompatTools({appid:" NP_C4 "});",
+      "const " NP_C1 "=new " NP_C2 ";globalThis.NPHadronUseState=" NP_C6 ".useState;"
+      "globalThis.NPHadronUseEffect=" NP_C6 ".useEffect;function " NP_C3
+      "(" NP_C4 "){const " NP_C5 "=" NP_C6
+      ".useCallback(async()=>{const " NP_C7 "=await " NP_C8 ".GetCompatTools({appid:" NP_C4 "});", 1, NP_GATE_PAGE },
     // Compatibility Tool selector, wrapped to drop settings a FEX tool cannot use
     { "[" NP_C1 "," NP_C2 "]=(0," NP_C3 ".cT)(" NP_C4 ");if(" NP_C1 ".isLoading||!" NP_C1
       ".data?.tools?.length)return null;",
       "[" NP_C1 "," NP_C2 "]=(typeof NPHadronToolQuery==\"function\"?NPHadronToolQuery:r=>r)"
       "((0," NP_C3 ".cT)(" NP_C4 ")," NP_C4 ");if(" NP_C1
       ".isLoading||!" NP_C1 ".data?.tools?.length)return null;", 1, 1 },
+    // CompatManager service: hands the page's transport to NPHadronRoute for Hadron's own routes
+    { NP_C7 "=" NP_C7 "||(0," NP_C8 ".OI)().GetDefaultTransport(),"
+      NP_C7 "==null?new Promise((" NP_C9 "," NP_C10 ")=>{console.error(\"Transport Error: no transport is available for request\"),"
+      NP_C10 "(\"Transport Error: no transport is available for request\")}):"
+      NP_C7 ".SendMsg(\"CompatManager.GetCompatTools#1\",(0," NP_C1 ".I8)(" NP_C2 "," NP_C3 ")," NP_C4 ","
+      "{ePrivilege:1,eClientExecutionSite:2})}" NP_C5 ".GetCompatTools=" NP_C6 ";",
+      NP_C7 "=" NP_C7 "||(0," NP_C8 ".OI)().GetDefaultTransport(),"
+      NP_C7 "==null?new Promise((" NP_C9 "," NP_C10 ")=>{console.error(\"Transport Error: no transport is available for request\"),"
+      NP_C10 "(\"Transport Error: no transport is available for request\")}):"
+      NP_C7 ".SendMsg(\"CompatManager.GetCompatTools#1\",(0," NP_C1 ".I8)(" NP_C2 "," NP_C3 ")," NP_C4 ","
+      "{ePrivilege:1,eClientExecutionSite:2})}"
+      "globalThis.NPHadronRoute=(r,id)=>{const t=(0," NP_C8 ".OI)().GetDefaultTransport();"
+      "return!/^Hadron\\./.test(r)?Promise.reject(\"not a Hadron route\"):t?t.SendMsg(r,(0," NP_C1 ".I8)(" NP_C2 ",{appid:id})," NP_C4 ",{ePrivilege:1,eClientExecutionSite:2})"
+      ".then(x=>x.BSuccess()?x.Body().toObject().default_tool_identifier||\"\":Promise.reject(\"result \"+x.GetEResult()))"
+      ":Promise.reject(\"no transport\")};" NP_PREFIX_ROW NP_C5 ".GetCompatTools=" NP_C6 ";", 1, 1 },
     { "get is_invalid_os_type(){return this.most_available_per_client_data.is_invalid_os_type}",
       "get is_invalid_os_type(){return false}", 1, 0 },
     // Reminder banner for 32 bit Mac games
@@ -524,7 +1142,10 @@ static const np_gate_t g_fixes[] = {
     { "return " NP_C1 "?(0," NP_C2 ".jsx)(" NP_C3 ".B,{feature:" NP_C4 ".OK,label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_DefaultTool\"),rgOptions:" NP_C6 ",disabled:0==" NP_C6 ".length,"
       "selectedOption:" NP_C1 ",",
-      "return(" NP_C1 "||" NP_C6 ".some(e=>e.data===\"" NP_FALLBACK_TOOL "\"))?(0," NP_C2 ".jsx)("
+      "return(globalThis.NPHadronDefaultTool!==(" NP_C1 "||\"" NP_FALLBACK_TOOL "\")&&(globalThis.NPHadronDefaultTool="
+      NP_C1 "||\"" NP_FALLBACK_TOOL "\",queueMicrotask(()=>globalThis.dispatchEvent?.(new CustomEvent(\"nphadrondefaulttool\","
+      "{detail:globalThis.NPHadronDefaultTool})))),"
+      NP_C1 "||" NP_C6 ".some(e=>e.data===\"" NP_FALLBACK_TOOL "\"))?(0," NP_C2 ".jsx)("
       NP_C3 ".B,{feature:" NP_C4 ".OK,label:(0," NP_C5 ".we)"
       "(\"#Settings_SteamPlay_DefaultTool\"),rgOptions:" NP_C6 ",disabled:0==" NP_C6 ".length,"
       "selectedOption:" NP_C1 "||\"" NP_FALLBACK_TOOL "\",",
@@ -655,12 +1276,72 @@ int np_webpatch_should_patch(const char *path) {
         && strncmp(rest, "libraries/", sizeof("libraries/") - 1) != 0;
 }
 
+static const char *find_in(const char *s, size_t len, const char *want) {
+    size_t n = strlen(want);
+    for (size_t i = 0; n <= len && i <= len - n; i++)
+        if (s[i] == want[0] && memcmp(s + i, want, n) == 0) return s + i;
+    return NULL;
+}
+
+static const char *find_barrel(const char *s, size_t len, size_t *span) {
+    static const char *const names[] = NP_BARREL_NAMES;
+    char anchor[16];
+    snprintf(anchor, sizeof anchor, "%s:()=>", names[0]);
+    for (const char *at = s; (at = find_in(at, len - (size_t)(at - s), anchor)); at++) {
+        const char *open = at, *close = at;
+        while (open > s && open[-1] != '{' && open[-1] != '}' && at - open < 16384) open--;
+        while ((size_t)(close - s) < len && *close != '}' && close - at < 16384) close++;
+        if (open == s || open[-1] != '{' || (size_t)(close - s) >= len || *close != '}') continue;
+        int all = 1;
+        for (size_t i = 0; all && i < sizeof names / sizeof names[0]; i++) {
+            char lead[16], mid[16];
+            snprintf(lead, sizeof lead, "{%s:()=>", names[i]);
+            snprintf(mid, sizeof mid, ",%s:()=>", names[i]);
+            all = find_in(open - 1, (size_t)(close - open) + 1, lead)
+               || find_in(open - 1, (size_t)(close - open) + 1, mid);
+        }
+        if (all) {
+            if (span) *span = (size_t)(close - open) + 2;
+            return open - 1;
+        }
+    }
+    return NULL;
+}
+
+int np_webpatch_has_shape(const uint8_t *src, size_t src_len) {
+    for (size_t i = 0; i < NP_SHAPE_COUNT; i++)
+        if (count_matches((const char *)src, src_len, g_shapes[i].probe) > 0) return 1;
+    return 0;
+}
+
+static const char *settle_page(const np_ui_shape_t *shape, const char *s, size_t len,
+                               int *gate_on, size_t *live) {
+    int page_in = 0, page_missing = 0;
+    for (size_t g = 0; g < shape->count; g++)
+        if (shape->gates[g].optional == NP_GATE_PAGE) {
+            if (gate_on[g]) page_in = 1;
+            else page_missing = 1;
+        }
+    const char *why = !page_in ? NULL
+                    : page_missing ? "one of its gates did not match"
+                    : !find_barrel(s, len, NULL) ? "Steam's component barrel lacks a name it takes"
+                    : NULL;
+    for (size_t g = 0; why && g < shape->count; g++)
+        if (shape->gates[g].optional == NP_GATE_PAGE && gate_on[g]) {
+            gate_on[g] = 0;
+            if (live) (*live)--;
+        }
+    return why;
+}
+
 char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
                             const char **out_shape) {
     const char *s = (const char *)src;
 
     if (out_shape)
         *out_shape = NULL;
+    if (!g_feat_pinned)
+        g_feat_ready_done = 0;
 
     const np_ui_shape_t *shape = NULL;
     for (size_t i = 0; i < NP_SHAPE_COUNT; i++) {
@@ -741,6 +1422,9 @@ char *np_webpatch_transform(const uint8_t *src, size_t src_len, size_t *out_len,
             free(native_mac_js);
             return NULL;
         }
+        const char *page_out = settle_page(shape, s, src_len, gate_on, &gate_live);
+        if (page_out)
+            NP_ERR("webpatch: [%s] Default Compatibility Settings left out, %s", shape->name, page_out);
     }
 
     np_out_t out = {0};

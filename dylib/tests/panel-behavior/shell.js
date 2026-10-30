@@ -12,11 +12,12 @@ const TOGGLES = {
   'Metal HUD': 'MTL_HUD_ENABLED',
   'High Resolution': 'HADRON_RETINA',
   'Advertise AVX2 to Rosetta': 'ROSETTA_ADVERTISE_AVX',
-  'Let games read controllers directly': 'HADRON_RAW_CONTROLLERS',
+  'Let games read controllers directly (May break Steam Input. Not recommended)': 'HADRON_RAW_CONTROLLERS',
   'cnc-ddraw (old DirectDraw games)': 'HADRON_DDRAW',
 };
 // The value a toggle writes when on, where it is not 1.
 const ON = { HADRON_DDRAW: 'cnc-ddraw' };
+const ON_UNLESS_0 = { ROSETTA_ADVERTISE_AVX: true };
 const PANEL_KEYS = ['HADRON_GRAPHICS', 'MTL_HUD_ENABLED', 'DXMT_ENABLE_NVEXT',
   'DXMT_METALFX_SPATIAL_SWAPCHAIN', 'DXMT_CONFIG', 'ROSETTA_ADVERTISE_AVX', 'HADRON_RETINA',
   'HADRON_RAW_CONTROLLERS', 'HADRON_DDRAW'];
@@ -93,8 +94,10 @@ function agrees(t, v, env, what) {
     t.ok(got === '' ? want === '' : parseFloat(got) === want,
          `${what}: upscale shows "${got}", DXMT uses ${want}`);
   }
-  for (const [key, node] of Object.entries(v.toggles))
-    t.ok(node.props.checked === (env[key] === (ON[key] || '1')), `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
+  for (const [key, node] of Object.entries(v.toggles)) {
+    const on = key in ON_UNLESS_0 ? env[key] !== '0' : env[key] === (ON[key] || '1');
+    t.ok(node.props.checked === on, `${what}: ${key} shows ${node.props.checked}, game gets ${env[key]}`);
+  }
   t.ok(v.backend.props.selectedOption === (env.HADRON_GRAPHICS || 'dxmt'),
        `${what}: graphics shows "${v.backend.props.selectedOption}", game gets ${env.HADRON_GRAPHICS}`);
 }
@@ -116,6 +119,8 @@ const ACTIONS = [
     want: (v0, v1) => v1.backend.props.selectedOption === 'wined3d' },
   { name: 'graphics dxmt', run: v => v.backend.props.onChange({ data: 'dxmt' }),
     want: (v0, v1) => v1.backend.props.selectedOption === 'dxmt' },
+  { name: 'AVX2', run: v => v.toggles.ROSETTA_ADVERTISE_AVX.props.onChange(!v.toggles.ROSETTA_ADVERTISE_AVX.props.checked),
+    want: (v0, v1) => v1.toggles.ROSETTA_ADVERTISE_AVX.props.checked === !v0.toggles.ROSETTA_ADVERTISE_AVX.props.checked },
   { name: 'upscale 1.5', run: v => v.upscale && v.upscale.props.onChange({ data: '1.5' }),
     want: (v0, v1) => !v0.upscale || v1.upscale.props.selectedOption === '1.5' },
   { name: 'upscale off', run: v => v.upscale && v.upscale.props.onChange({ data: '' }),

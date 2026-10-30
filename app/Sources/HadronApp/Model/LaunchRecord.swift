@@ -125,7 +125,7 @@ enum LaunchStage: Int, CaseIterable, Sendable, Comparable {
     init?(step: String) {
         switch step {
         case "startup", "runner check": self = .runtime
-        case "prefix lock", "prefix build check", "prefix arch check": self = .prefix
+        case "prefix lock", "prefix build check", "prefix arch check", "prefix switch check": self = .prefix
         case "prefix conversion": self = .conversion
         case "prefix seed": self = .seed
         case "profile layout", "game drive", "prefix settings", "fonts": self = .setup

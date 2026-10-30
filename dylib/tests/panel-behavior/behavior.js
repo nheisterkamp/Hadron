@@ -103,7 +103,7 @@ for (const form of Object.keys(FORMS)) {
   t.ok(root.props.className === 'NPHadronPanel', 'the panel root carries its own class');
   const classes = nodes('').filter(x => x.type === 'Toggle').map(x => x.props.className);
   t.ok(classes.length === 6 && classes.every(c => c === 'NPHadronRow'), 'every checkbox carries the row class');
-  const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly');
+  const raw = o => nodes(o).find(x => x.props.label === 'Let games read controllers directly (May break Steam Input. Not recommended)');
   t.ok(sections(nodes('')).includes('Controllers') && raw('').props.checked === false,
        'controller hiding is on unless the game says otherwise');
   written.length = 0;
@@ -116,6 +116,99 @@ for (const form of Object.keys(FORMS)) {
   const css = nodes('').filter(x => x.type === 'style');
   t.ok(css.length === 1 && css[0].props.children.includes('.NPHadronPanel .NPHadronRow{'),
        'the panel carries one stylesheet defining the row rule');
+  t.ok(css[0].props.children.includes('.NPHadronPanel .NPHadronRowDesc>:last-child{flex-basis:100%}'),
+       'and the rule that drops a description onto its own line');
+
+  const FEATS = JSON.stringify([
+    { k: 'HADRON_ALPHA', l: 'Alpha', on: '1', off: '', dep: '', d: '' },
+    { k: 'HADRON_BETA', l: 'Beta', on: '1', off: '0', dep: '', d: 'Why Beta.' },
+    { k: 'HADRON_BETA_SUB', l: 'Beta: extra', on: '1', off: '0',
+      dep: 'HADRON_BETA', d: '' },
+  ]).replace(/"(\w+)":/g, '$1:');
+
+  t.ok(!sections(nodes('')).includes('Developer'),
+       'no plugins means no Developer section');
+  // rows.length && <jsx> puts a stray "0" on the page when there are no rows.
+  const hasZero = n => {
+    if (n === 0) return true;
+    if (!n || typeof n !== 'object') return false;
+    if (Array.isArray(n)) return n.some(hasZero);
+    if (typeof n.type === 'function') return hasZero(n.type(n.props));
+    return !!(n.props && n.props.children) && hasZero(n.props.children);
+  };
+  t.ok(hasZero({ props: { children: [1 && 'x', 0 && 'y'] } }),
+       'the stray-zero scanner finds a zero when there is one');
+  t.ok(!hasZero(P({ details: details('') })),
+       'no plugins renders nothing rather than a literal 0');
+
+  const { render: PF } = panel(emit, form, undefined,
+                              { ready: '{"HADRON_ALPHA":0}', feats: FEATS });
+  const fnodes = opts => walk(PF({ details: details(opts) }));
+  const frows = opts => fnodes(opts).filter(x => x.type === 'Toggle');
+  const flabels = opts => frows(opts).map(x => x.props.label);
+  const alpha = o => frows(o).find(x => x.props.label.startsWith('Alpha'));
+
+  t.ok(fnodes('').filter(x => x.type === 'Section')
+         .some(x => x.props.label === 'Developer'),
+       'plugins add a Developer section');
+  t.ok(!flabels('').some(l => l.startsWith('Beta:')),
+       'a dependent row stays hidden while its parent is off');
+  t.ok(flabels('HADRON_BETA=1 %command%').some(l => l.startsWith('Beta:')),
+       'a dependent row appears once its parent is on');
+  t.ok(!flabels('HADRON_BETA=0 %command%').some(l => l.startsWith('Beta:')),
+       'a parent at its off value does not count as on');
+  t.ok(alpha('') && alpha('').props.disabled === true,
+       'a plugin whose assets are missing renders disabled');
+  t.ok(alpha('').props.label.endsWith('(not installed)'),
+       'it says why it cannot be used');
+  t.ok(alpha('HADRON_ALPHA=1 %command%').props.checked === false,
+       'a stale launch option does not show it as on');
+  t.ok(frows('').filter(x => x.props.disabled === true).length === 1,
+       'only that one is disabled');
+  t.ok(frows('').find(x => x.props.label === 'Beta').props.disabled === false,
+       'a plugin with no readiness entry stays enabled');
+  t.ok(frows('').find(x => x.props.label === 'Beta').props.className === 'NPHadronRow NPHadronRowDesc',
+       'a row with a description opts out of the row-direction rule');
+  t.ok(frows('').find(x => x.props.label.startsWith('Alpha')).props.className === 'NPHadronRow',
+       'a row without one keeps the plain row class');
+  t.ok(frows('').find(x => x.props.label === 'Beta').props.description === 'Why Beta.',
+       "a plugin's description reaches the row");
+  t.ok(frows('').find(x => x.props.label.startsWith('Alpha')).props.description === undefined,
+       'a plugin without one passes no description at all');
+
+  const CHAIN = JSON.stringify([
+    { k: 'HADRON_BETA', l: 'Beta', on: '1', off: '0', dep: '', d: '' },
+    { k: 'HADRON_BETA_SUB', l: 'Beta: extra', on: '1', off: '0',
+      dep: 'HADRON_BETA', d: '' },
+    { k: 'HADRON_BETA_SUB_SUB', l: 'Beta: more', on: '1', off: '0',
+      dep: 'HADRON_BETA_SUB', d: '' },
+  ]).replace(/"(\w+)":/g, '$1:');
+  const chain = ready => {
+    const { render } = panel(emit, form, undefined, { ready, feats: CHAIN });
+    return o => walk(render({ details: details(o) }))
+      .filter(x => x.type === 'Toggle').map(x => x.props.label);
+  };
+  t.ok(chain('{}')('HADRON_BETA_SUB=1 HADRON_BETA_SUB_SUB=1 %command%')
+         .every(l => !l.startsWith('Beta:')),
+       'a row stays hidden while any plugin above it is off');
+  t.ok(chain('{}')('HADRON_BETA=1 HADRON_BETA_SUB=1 %command%').includes('Beta: more'),
+       'and appears once the whole chain is on');
+  t.ok(!chain('{"HADRON_BETA":0}')('HADRON_BETA=1 %command%').includes('Beta: extra'),
+       'a parent that is not installed does not count as on');
+  const { render: PB } = panel(emit, form, undefined,
+                              { ready: '{"HADRON_RAW_CONTROLLERS":0}', feats: CHAIN });
+  t.ok(walk(PB({ details: details('') })).filter(x => x.type === 'Toggle')
+         .every(x => x.props.disabled !== true),
+       'readiness never disables a built-in row');
+
+  const rowless = nodes('').filter(x => x.type === 'div' && typeof x.props.ref === 'function');
+  t.ok(rowless.length === 0, 'no prefix row before the page defines one');
+  const rowsFor = [];
+  global.NPHadronPrefixRow = (e, id) => rowsFor.push(id);
+  const prefix = nodes('').filter(x => x.type === 'div' && typeof x.props.ref === 'function');
+  if (prefix.length === 1) prefix[0].props.ref({});
+  delete global.NPHadronPrefixRow;
+  t.ok(prefix.length === 1 && rowsFor[0] === 287700, 'the panel hosts the prefix row for its game');
 
   const { render: S } = panel(emit, form, undefined, { names: ['o', 't'] });
   const shadowed = walk(S({ details: details('HADRON_GRAPHICS=dxvk1 %command%') }));

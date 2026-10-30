@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <mach-o/loader.h>
+#include "../feats/compat.h"
 
 // Stubs for the compat layer, set by each test before calling a handler. The check owns
 // both sides, so what the handler includes and labels is under test, not the compat answers.
@@ -108,10 +109,62 @@ int np_webui_parse_into(uintptr_t message, const void *bytes, uint32_t len) {
 
 uintptr_t np_webui_registry(void) { return 1; }
 
+static const char *routes_seen[16];
+static uintptr_t   route_requests[16];
+static int         route_count;
+
 int np_webui_register_route(const char *name, uintptr_t req, uintptr_t resp,
                             int (*handler)(uintptr_t, uintptr_t)) {
-    (void)name; (void)req; (void)resp; (void)handler;
+    (void)resp; (void)handler;
+    if (route_count < 16) {
+        routes_seen[route_count] = name;
+        route_requests[route_count++] = req;
+    }
     return 1;
+}
+
+static uint32_t    saved_runner = 99;
+static const char *saved_text;
+static int         save_ok = 1;
+
+static char saved_build[128];
+static int  applied;
+
+static np_compat_tool_info_t stub_infos[] = {
+    { "hadron-26.1", "26.1", "CrossOver 26.1", false },
+    { "hadron-26.1-fex", "26.1", "CrossOver 26.1 (FEX)", true },
+};
+
+bool np_compat_tool_by_name(const char *name, size_t n, np_compat_tool_info_t *out) {
+    for (size_t i = 0; i < sizeof stub_infos / sizeof stub_infos[0]; i++)
+        if (strlen(stub_infos[i].name) == n && memcmp(stub_infos[i].name, name, n) == 0) {
+            *out = stub_infos[i];
+            return true;
+        }
+    return false;
+}
+
+int np_defaults_save(uint32_t runner, const char *text) {
+    saved_runner = runner;
+    saved_text = text;
+    saved_build[0] = '\0';
+    return save_ok;
+}
+
+int np_defaults_save_build(const char *build, uint32_t runner, const char *text) {
+    saved_runner = runner;
+    saved_text = text;
+    snprintf(saved_build, sizeof saved_build, "%s", build);
+    return save_ok;
+}
+
+static int apply_result = 1;
+
+int np_defaults_apply_build(const char *build, uint32_t runner) {
+    saved_runner = runner;
+    snprintf(saved_build, sizeof saved_build, "%s", build);
+    applied = 1;
+    return save_ok ? apply_result : 0;
 }
 
 int np_webui_notify(const char *name, uintptr_t message) {
@@ -144,6 +197,47 @@ int np_log_first_hit(const void *anchor, unsigned long tag) {
     (void)anchor; (void)tag;
     return 1;
 }
+
+// The prefix state has its own check, so here it is whatever the test sets.
+#include "../feats/prefixstate.h"
+#include <spawn.h>
+#include <sys/wait.h>
+const char *np_home_dir(void) { return "/home"; }
+static np_prefix_state_t stub_state;
+static int stub_rebuilding;
+void np_prefix_state(uint32_t appid, const char *tool, const np_prefix_roots_t *roots,
+                     np_prefix_state_t *st) {
+    (void)appid; (void)roots;
+    *st = stub_state;
+    snprintf(st->tool, sizeof st->tool, "%s", tool ? tool : "");
+}
+int np_prefix_rebuilding(const np_prefix_state_t *st) { (void)st; return stub_rebuilding; }
+int np_prefix_state_json(uint32_t appid, const np_prefix_state_t *st, char *out, size_t cap) {
+    return snprintf(out, cap, "{\"appid\":%u,\"tool\":\"%s\"}", appid, st->tool);
+}
+
+// Spawns are recorded instead of run, so the routes that start processes are checked by
+// what they would have started.
+#define SPAWN_ARGS_MAX 16
+static char spawned[SPAWN_ARGS_MAX][1024];
+static int spawned_count;
+static int spawn_result;
+static int stub_posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *fa,
+                            const posix_spawnattr_t *attr, char *const argv[], char *const envp[]) {
+    (void)path; (void)fa; (void)attr; (void)envp;
+    spawned_count = 0;
+    for (; argv[spawned_count] && spawned_count < SPAWN_ARGS_MAX; spawned_count++)
+        snprintf(spawned[spawned_count], sizeof spawned[0], "%s", argv[spawned_count]);
+    *pid = 4242;
+    return spawn_result;
+}
+static pid_t stub_waitpid(pid_t pid, int *status, int options) {
+    (void)options;
+    *status = 0;
+    return pid;
+}
+#define posix_spawn stub_posix_spawn
+#define waitpid stub_waitpid
 
 #include "../feats/compatsvc.c"
 
@@ -612,6 +706,75 @@ static void specify_cases(void) {
     check(last_map_appid == 0, "a request with no appid has-bit reads as appid zero");
 }
 
+static void set_defaults_cases(void) {
+    reset();
+    int rc = set_defaults(build_specify_request(SPECIFY_HAS_APPID, 1, "HADRON_RETINA=1\nMTL_HUD_ENABLED=0"),
+                          (uintptr_t)response_buf);
+    check(rc == RESULT_OK, "saved defaults succeed");
+    check(saved_runner == 1, "the appid names the runner");
+    check(saved_text && strcmp(saved_text, "HADRON_RETINA=1\nMTL_HUD_ENABLED=0") == 0,
+          "the tool name carries the lines");
+
+    rc = set_defaults(build_specify_request(0, 1, ""), (uintptr_t)response_buf);
+    check(saved_runner == 0, "a request with no appid has-bit is Rosetta");
+    check(saved_text && saved_text[0] == '\0', "an empty request clears the defaults");
+
+    save_ok = 0;
+    rc = set_defaults(build_specify_request(SPECIFY_HAS_APPID, 0, "x"), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL, "a refused save fails the request");
+    save_ok = 1;
+}
+
+static void tool_defaults_cases(void) {
+    reset();
+    saved_runner = 99;
+    int rc = set_tool_defaults(build_specify_request(0, 0, "hadron-26.1-fex\nHADRON_RETINA=1"),
+                               (uintptr_t)response_buf);
+    check(rc == RESULT_OK && saved_runner == 1 && strcmp(saved_build, "26.1") == 0,
+          "a tool's lines save to its build and runner");
+    check(saved_text && strcmp(saved_text, "HADRON_RETINA=1") == 0, "the lines after the tool are saved");
+
+    rc = set_tool_defaults(build_specify_request(0, 0, "hadron-26.1"), (uintptr_t)response_buf);
+    check(rc == RESULT_OK && saved_runner == 0 && saved_text && saved_text[0] == '\0',
+          "a tool with no lines saves an empty set");
+
+    saved_build[0] = '\0';
+    rc = set_tool_defaults(build_specify_request(0, 0, "hadron-27.0\nHADRON_RETINA=1"),
+                           (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !saved_build[0], "a tool that is not installed saves nothing");
+    rc = set_tool_defaults(build_specify_request(0, 0, "hadron-26\nHADRON_RETINA=1"),
+                           (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !saved_build[0], "a tool name has to match whole");
+
+    char long_tool[200];
+    memset(long_tool, 'a', 150);
+    long_tool[150] = '\0';
+    rc = set_tool_defaults(build_specify_request(0, 0, long_tool), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !saved_build[0], "an overlong tool is refused before saving");
+
+    save_ok = 0;
+    rc = set_tool_defaults(build_specify_request(0, 0, "hadron-26.1\nHADRON_RETINA=1"),
+                           (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL, "a refused build save fails the request");
+    save_ok = 1;
+
+    applied = 0;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "hadron-26.1"), (uintptr_t)response_buf);
+    check(rc == RESULT_OK && applied && saved_runner == 0 && strcmp(saved_build, "26.1") == 0,
+          "applying hands the tool's build and runner over");
+    applied = 0;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "hadron-27.0"), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && !applied, "applying a tool that is not installed does nothing");
+    save_ok = 0;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "hadron-26.1"), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL, "a refused apply fails the request");
+    save_ok = 1;
+    apply_result = -1;
+    rc = apply_tool_defaults(build_specify_request(0, 0, "hadron-26.1"), (uintptr_t)response_buf);
+    check(rc == NP_COMPATSVC_PARTLY_APPLIED, "a partial apply says so, apart from one that changed nothing");
+    apply_result = 1;
+}
+
 static void no_manager_cases(void) {
     // When np_compat_manager returns NULL the handlers must cope.
     reset();
@@ -634,9 +797,24 @@ static void routes_state_cases(void) {
     check(np_compatsvc_routes() == NP_COMPATSVC_UNTRIED,
           "no route lookup yet reads as untried rather than absent");
 
+    route_count = 0;
     np_compatsvc_register(NULL, 0, 0, 0);
     check(np_compatsvc_routes() == NP_COMPATSVC_READY,
           "a client carrying every message type registers and reads as ready");
+    static const char *const defaults_routes[] = { ROUTE_SET_DEFAULTS, ROUTE_SET_TOOL_DEFAULTS,
+                                                   ROUTE_APPLY_TOOL_DEFAULTS };
+    int specify = -1, after = 1, same = 1;
+    for (int i = 0; i < route_count; i++)
+        if (strcmp(routes_seen[i], ROUTE_SPECIFY_COMPAT_TOOL) == 0) specify = i;
+    for (size_t r = 0; r < sizeof defaults_routes / sizeof defaults_routes[0]; r++) {
+        int at = -1;
+        for (int i = 0; i < route_count; i++)
+            if (strcmp(routes_seen[i], defaults_routes[r]) == 0) at = i;
+        after &= specify >= 0 && at > specify;
+        same &= at >= 0 && specify >= 0 && route_requests[at] == route_requests[specify];
+    }
+    check(after, "every defaults route registers after SpecifyCompatTool");
+    check(same, "every defaults route takes the SpecifyCompatTool request");
 
     // The stable client: the page specifies the tool directly and the build carries no
     // CompatManager types at all.
@@ -662,6 +840,147 @@ static void routes_state_cases(void) {
 
     g_routes = NP_COMPATSVC_UNTRIED;
     stub_absent_type = NULL;
+}
+
+static char scratch[PATH_MAX];
+
+static const char *answer(void) {
+    static char json[256];
+    json[0] = '\0';
+    pb_copy_string(captured_pb, captured_pb_len, RESP_DEFAULT, json, sizeof json);
+    return json;
+}
+
+static int exists(const char *name) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof path, "%s/%s", scratch, name);
+    return access(path, F_OK) == 0;
+}
+
+static void put(const char *name, const char *text) {
+    char path[PATH_MAX];
+    snprintf(path, sizeof path, "%s/%s", scratch, name);
+    FILE *f = fopen(path, "w");
+    fputs(text, f);
+    fclose(f);
+}
+
+static void ready_to_rebuild(void) {
+    reset();
+    memset(&stub_state, 0, sizeof stub_state);
+    stub_rebuilding = 0;
+    spawned_count = 0;
+    spawn_result = 0;
+    stub_state.has_prefix = 1;
+    stub_state.needs_rebuild = 1;
+    snprintf(stub_state.compatdata, sizeof stub_state.compatdata, "%s", scratch);
+    snprintf(stub_state.tool_build, sizeof stub_state.tool_build, "27.0.0.41073-fex");
+    snprintf(stub_state.tool_flavor, sizeof stub_state.tool_flavor, "fex");
+    snprintf(stub_state.app, sizeof stub_state.app, "/Applications/Hadron.app/Contents/MacOS/HadronApp");
+    stub_tool_for_app_name = "hadron-fex-41073";
+    char status[PATH_MAX];
+    snprintf(status, sizeof status, "%s/hadron-rebuild", scratch);
+    unlink(status);
+}
+
+// Any page can call these, and two of them start the app, so each refusal is checked.
+static void rebuild_route_cases(void) {
+    snprintf(scratch, sizeof scratch, "%s/compatsvc.XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
+    if (!mkdtemp(scratch)) { check(0, "a scratch compatdata exists"); return; }
+
+    struct { const char *why; void (*set)(void); const char *want; } refusals[] = {
+        { "a prefix that needs no rebuild is not rebuilt", NULL, "{\"error\":\"none\"}" },
+        { "a rebuild already under way is not started twice", NULL, "{\"error\":\"busy\"}" },
+        { "a running game is not rebuilt under it", NULL, "{\"error\":\"running\"}" },
+        { "a missing app is reported, not started", NULL, "{\"error\":\"app\"}" },
+    };
+    for (int i = 0; i < 4; i++) {
+        ready_to_rebuild();
+        if (i == 0) stub_state.needs_rebuild = 0;
+        if (i == 1) stub_rebuilding = 1;
+        if (i == 2) stub_state.running = 1;
+        if (i == 3) stub_state.app[0] = '\0';
+        int rc = rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+        check(rc == RESULT_OK && strcmp(answer(), refusals[i].want) == 0, refusals[i].why);
+        check(spawned_count == 0, "a refused rebuild starts nothing");
+        check(!exists("hadron-rebuild"), "a refused rebuild writes no progress");
+    }
+
+    ready_to_rebuild();
+    int rc = backup_and_rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(rc == RESULT_OK && strcmp(answer(), "{\"started\":true}") == 0, "a rebuild starts");
+    char log[PATH_MAX];
+    snprintf(log, sizeof log, "%s/hadron-run.log", scratch);
+    const char *want[] = { "/bin/sh", "-c", REBUILD_SCRIPT, stub_state.app, log, scratch,
+                           "hadron-fex-41073", "27.0.0.41073-fex", "fex", "keep-backup" };
+    int same = spawned_count == 10;
+    for (int i = 0; same && i < 10; i++) same = strcmp(spawned[i], want[i]) == 0;
+    check(same, "the app gets the prefix, the tool Steam would run, and the backup choice");
+    check(exists("hadron-rebuild"), "a started rebuild reads as under way before the app reports");
+
+    ready_to_rebuild();
+    char status_path[PATH_MAX], victim[PATH_MAX], lock_path[PATH_MAX];
+    snprintf(status_path, sizeof status_path, "%s/hadron-rebuild", scratch);
+    snprintf(victim, sizeof victim, "%s/keep", scratch);
+    snprintf(lock_path, sizeof lock_path, "%s/.hadron-rebuild.lock", scratch);
+    put("keep", "untouched");
+    symlink(victim, status_path);
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    struct stat info;
+    check(spawned_count == 0 && stat(victim, &info) == 0 && info.st_size == 9,
+          "a symlinked status neither truncates its target nor starts a rebuild");
+    ready_to_rebuild();
+    int claim = open(lock_path, O_RDWR);
+    if (claim < 0 || flock(claim, LOCK_EX | LOCK_NB) != 0) abort();
+    put("hadron-rebuild", "copy\n4242\n");
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(spawned_count == 0 && strcmp(answer(), "{\"error\":\"busy\"}") == 0,
+          "the actual rebuild lock refuses a launch even when the state snapshot is stale");
+    close(claim);
+
+    ready_to_rebuild();
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(spawned_count == 10 && strcmp(spawned[9], "discard-backup") == 0,
+          "a plain rebuild discards the original");
+
+    ready_to_rebuild();
+    spawn_result = 1;
+    rebuild_prefix(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(strcmp(answer(), "{\"error\":\"spawn\"}") == 0, "a rebuild that cannot start says so");
+    check(!exists("hadron-rebuild"), "a rebuild that cannot start leaves no progress behind");
+
+    ready_to_rebuild();
+    rc = rebuild_prefix(build_request(0, 0), (uintptr_t)response_buf);
+    check(rc == RESULT_FAIL && spawned_count == 0, "a request with no appid starts nothing");
+
+    ready_to_rebuild();
+    open_prefix_log(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(strcmp(answer(), "{\"error\":\"log\"}") == 0 && spawned_count == 0,
+          "a missing log is not opened");
+    put("hadron-run.log", "x\n");
+    open_prefix_log(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(strcmp(answer(), "{\"opened\":true}") == 0 && spawned_count == 4
+          && strcmp(spawned[0], "/bin/sh") == 0 && strcmp(spawned[3], log) == 0
+          && strcmp(spawned[2], "/usr/bin/open -t \"$0\" &") == 0,
+          "the log opens in the background, so Steam does not wait on LaunchServices");
+    unlink(log);
+    symlink(victim, log);
+    spawned_count = 0;
+    open_prefix_log(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(spawned_count == 0, "a symlinked log is not opened");
+
+    ready_to_rebuild();
+    put("hadron-rebuild", "done\n1\n");
+    prefix_state(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(exists("hadron-rebuild"), "a finished rebuild remains available to other pages");
+    put("hadron-rebuild", "copy\n1\n");
+    stub_rebuilding = 1;
+    prefix_state(build_request(REQ_HAS_APPID, 480), (uintptr_t)response_buf);
+    check(exists("hadron-rebuild"), "a rebuild under way keeps its progress");
+
+    char cmd[PATH_MAX + 16];
+    snprintf(cmd, sizeof cmd, "rm -rf '%s'", scratch);
+    if (system(cmd) != 0) fprintf(stderr, "could not remove %s\n", scratch);
 }
 
 static void string_field_cases(void) {
@@ -713,15 +1032,18 @@ int main(void) {
     fallback_cases();
     active_flag_cases();
     specify_cases();
+    set_defaults_cases();
+    tool_defaults_cases();
     no_manager_cases();
     routes_state_cases();
     string_field_cases();
+    rebuild_route_cases();
 
     if (failures) {
         printf("==> compatsvc: %d check(s) failed\n", failures);
         return 1;
     }
     printf("==> compatsvc: the tool list, the none entry, the priorities, the specify "
-           "handler, and the route states all answer\n");
+           "handler, the route states and the rebuild routes all answer\n");
     return 0;
 }

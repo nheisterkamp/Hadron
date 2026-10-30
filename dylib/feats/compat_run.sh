@@ -161,6 +161,46 @@ WINELOADER="$wine_unix/wine"
 WINESERVER="$np_root/bin/wineserver"
 export WINELOADER WINESERVER
 
+np_from_defaults() {
+  case " $np_defaulted " in *" $1="*) return 0 ;; esac
+  return 1
+}
+np_defaulted=""
+np_flavor=rosetta
+[ "${wine_unix##*/}" != aarch64-unix ] || np_flavor=fex
+np_defaults_file="$np_support/defaults-$np_flavor"
+if [ -n "${np_build-}" ] && [ -f "$np_support/defaults-override-$np_build-$np_flavor" ]; then
+  np_defaults_file="$np_support/defaults-override-$np_build-$np_flavor"
+fi
+if [ "$verb" = waitforexitandrun ] && [ -f "$np_defaults_file" ] && [ -r "$np_defaults_file" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    key=${line%%=*}
+    value=${line#*=}
+    case "$line" in
+      HADRON_GRAPHICS=dxvk1 | HADRON_GRAPHICS=wined3d) ;;
+      HADRON_GRAPHICS=dxmt | HADRON_GRAPHICS=d3dmetal | HADRON_GRAPHICS=dxvk | ROSETTA_ADVERTISE_AVX=[01])
+        [ "${wine_unix##*/}" != aarch64-unix ] || continue ;;
+      FEX_X87REDUCEDPRECISION=[01])
+        [ "${wine_unix##*/}" = aarch64-unix ] || continue ;;
+      MTL_HUD_ENABLED=[01] | DXMT_ENABLE_NVEXT=[01] | DXMT_METALFX_SPATIAL_SWAPCHAIN=[01] | \
+      HADRON_RETINA=[01] | HADRON_RAW_CONTROLLERS=[01] | HADRON_DDRAW=0 | HADRON_DDRAW=cnc-ddraw) ;;
+      DXMT_CONFIG=d3d11.metalSpatialUpscaleFactor=*)
+        case "${value#*=}" in 1.5 | 1.72 | 2.0 | 3.0) ;; *) continue ;; esac
+        if printf '%s' "${DXMT_CONFIG-}" | tr ';' '\n' \
+          | grep -q '^[[:space:]]*d3d11\.metalSpatialUpscaleFactor[[:space:]]*='; then
+          continue
+        fi
+        export DXMT_CONFIG="${DXMT_CONFIG:+$DXMT_CONFIG;}$value"
+        np_defaulted="$np_defaulted${np_defaulted:+ }$line"
+        continue ;;
+      *) continue ;;
+    esac
+    eval "[ -z \"\${$key+x}\" ]" || continue
+    export "${line?}"
+    np_defaulted="$np_defaulted${np_defaulted:+ }$line"
+  done < "$np_defaults_file"
+fi
+
 # arm64 Wine runs x86 code with FEX, not Rosetta, and has no D3DMetal, so their
 # settings mean nothing there.
 np_dropped=""
@@ -169,6 +209,15 @@ if [ "${wine_unix##*/}" = aarch64-unix ]; then
     unset -v "$name"
     np_dropped="$np_dropped${np_dropped:+ }$name"
   done
+  fex_from=environment
+  [ -n "${FEX_X87REDUCEDPRECISION+x}" ] || fex_from=default
+  if np_from_defaults FEX_X87REDUCEDPRECISION; then fex_from=${np_defaults_file##*/}; fi
+  export FEX_X87REDUCEDPRECISION="${FEX_X87REDUCEDPRECISION-1}"
+else
+  avx_from=environment
+  [ -n "$ROSETTA_ADVERTISE_AVX" ] || avx_from=default
+  if np_from_defaults ROSETTA_ADVERTISE_AVX; then avx_from=${np_defaults_file##*/}; fi
+  export ROSETTA_ADVERTISE_AVX="${ROSETTA_ADVERTISE_AVX:-1}"
 fi
 
 # Keeps Wine from inheriting the prefix and template locks (fd 8 and 9).
@@ -197,6 +246,7 @@ fi
   echo "STEAM_COMPAT_APP_ID=$STEAM_COMPAT_APP_ID"
   echo "-- steam env passed through --"
   env | grep -iE '^(Steam|SDL_)' | sort
+  [ -z "$np_defaulted" ] || echo "from ${np_defaults_file##*/}: $np_defaulted"
   [ -z "$np_dropped" ] || echo "ignored on arm64 Wine: $np_dropped"
 } >> "$log" 2>&1 || true
 
@@ -324,6 +374,111 @@ alert_safe() {
   printf '%s' "$1" | tr -d '"\\'
 }
 
+# The log path reaches AppleScript as an argument, so a quote in it cannot end a string.
+show_rebuild_failure() {
+  [ "$verb" != run ] || return 0
+  exec 8>&- 9>&-
+  answer=$(osascript - "$log" <<'APPLESCRIPT'
+on run argv
+  set answer to display alert "Prefix rebuild failed!" message ("Check hadron-run.log at " & (item 1 of argv) & ".") as critical buttons {"Open Log", "OK"} default button "OK"
+  return button returned of answer
+end run
+APPLESCRIPT
+  ) || answer=""
+  [ "$answer" != "Open Log" ] || { [ -f "$log" ] && [ ! -L "$log" ] && open -t "$log" >/dev/null 2>&1; } || true
+}
+
+# Steam shows the game as running while this waits, and Stop kills the script's process
+# group and children. A rebuild killed between its two renames leaves no pfx at all, so the
+# app runs outside both: the inner subshell is reparented to launchd and the app calls
+# setsid. The script only waits for the exit status the subshell leaves behind.
+run_rebuild() {
+  rebuild_exit="$STEAM_COMPAT_DATA_PATH/hadron-rebuild-exit"
+  rebuild_lock="$STEAM_COMPAT_DATA_PATH/.hadron-rebuild.lock"
+  rm -f "$rebuild_exit"
+  (
+    (
+      env -i HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+        HADRON_REBUILD_WINDOW=1 \
+        "$1" --rebuild-prefix "$STEAM_COMPAT_DATA_PATH" "${np_tool_dir##*/}" \
+        "$np_build" "$np_flavor" "$2" >> "$log" 2>&1 < /dev/null
+      echo "$?" > "$rebuild_exit.$$" && mv -f "$rebuild_exit.$$" "$rebuild_exit"
+    ) &
+  )
+  waited=0
+  while [ ! -f "$rebuild_exit" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    # Nothing holds the lock once the app is gone. The grace covers its startup.
+    if [ "$waited" -gt 30 ] && /usr/bin/lockf -s -t 0 "$rebuild_lock" true 2>/dev/null; then
+      sleep 2
+      [ -f "$rebuild_exit" ] || return 1
+    fi
+  done
+  read -r rebuild_status_code < "$rebuild_exit" || rebuild_status_code=1
+  rm -f "$rebuild_exit"
+  [ "$rebuild_status_code" = 0 ]
+}
+
+# $1 is the title, $2 the message. With $3, that button skips the rebuild and the launch goes on.
+rebuild_prefix() {
+  # Install-script helpers must never prompt or rebuild behind the player's back.
+  [ "$verb" != run ] || { [ -n "$3" ] && return 0; exit 1; }
+  [ "${np_rebuilt:-0}" != 1 ] || {
+    show_rebuild_failure
+    exit 1
+  }
+  exec 8>&- 9>&-
+  # AppleScript run from a shell has no icon of its own, so caution comes badged with a folder.
+  icon=$(cat "$np_support/app-executable" 2>/dev/null) || icon=""
+  icon="${icon%/Contents/MacOS/*}/Contents/Resources/Hadron.icns"
+  [ -f "$icon" ] || icon=""
+  choice=$(osascript - "$1" "$2" "${3:-Cancel}" "$icon" <<'APPLESCRIPT'
+on run argv
+  set choices to {item 3 of argv, "Rebuild Prefix", "Backup & Rebuild Prefix"}
+  if item 4 of argv is "" then
+    set answer to display dialog (item 2 of argv) with title (item 1 of argv) buttons choices default button "Backup & Rebuild Prefix" cancel button (item 3 of argv) with icon caution
+  else
+    set answer to display dialog (item 2 of argv) with title (item 1 of argv) buttons choices default button "Backup & Rebuild Prefix" cancel button (item 3 of argv) with icon ((POSIX file (item 4 of argv)) as alias)
+  end if
+  return button returned of answer
+end run
+APPLESCRIPT
+  ) || choice=""
+  case "$choice" in
+    'Backup & Rebuild Prefix') backup=keep-backup ;;
+    'Rebuild Prefix') backup=discard-backup ;;
+    *)
+      [ -n "$3" ] || exit 1
+      prepare_prefix_directory || exit 1
+      return 0
+      ;;
+  esac
+  executable=$(cat "$np_support/app-executable" 2>/dev/null) || executable=""
+  if [ ! -x "$executable" ]; then
+    show_alert "Couldn't find the Hadron app" "The prefix wasn't rebuilt and the game wasn't launched, because the Hadron app was moved or deleted since it was installed, or was installed from a disk image or Downloads. Move Hadron to Applications, open it and click Install again, then launch the game."
+    exit 1
+  fi
+  if ! run_rebuild "$executable" "$backup"; then
+    # This dialog says it failed, so the page should not say it again later. A refusal
+    # because another rebuild runs left that rebuild's progress, which stays.
+    rebuild_status="$STEAM_COMPAT_DATA_PATH/hadron-rebuild"
+    [ "$(head -n 1 "$rebuild_status" 2>/dev/null)" != failed ] || rm -f "$rebuild_status"
+    show_rebuild_failure
+    exit 1
+  fi
+  rm -f "$STEAM_COMPAT_DATA_PATH/hadron-switch" "$STEAM_COMPAT_DATA_PATH/hadron-rebuild"
+  # A competing launch or rebuild may have run while the dialog was open.
+  # Retake the normal launch lock and check both mismatches before touching Wine.
+  if ! prepare_prefix_directory; then
+    show_alert "Prefix rebuilt" "Another launch is using this prefix. Wait for it to finish, then launch the game again."
+    exit 1
+  fi
+  np_rebuilt=1
+  note_other_build
+  convert_foreign_prefix
+}
+
 # A wineserver another runtime left on this prefix would write its registry back over
 # the conversion below. That runtime's own wineserver -k ends it and its processes,
 # saving the registry; SIGTERM is the fallback.
@@ -415,7 +570,75 @@ note_other_build() {
   fi
   if [ -n "$had_build" ] && [ "$had_build" != "$np_build" ]; then
     echo "=== prefix moves from ${had_display:-build $had_build} to $np_display, Wine updates it in place ===" >> "$log" 2>&1 || true
+    case "${wine_unix##*/}:$(prefix_machine)" in
+      aarch64-unix:8664 | aarch64-unix:014c | x86_64-unix:aa64 | x86_64-unix:014c) return 0 ;;
+    esac
+    switch="$STEAM_COMPAT_DATA_PATH/hadron-switch"
+    rm -f "$switch"
+    # Only a build the game is known to have run on can be blamed for a crash after the switch.
+    if [ "$(head -1 "$STEAM_COMPAT_DATA_PATH/hadron-healthy" 2>/dev/null)" = "$had_build" ]; then
+      printf '%s\n%s\n0\n' "$had_build" "${had_display:-build $had_build}" > "$switch" 2>/dev/null || true
+    fi
   fi
+}
+
+# Healthy is a session Steam did not cut short or that lasted, with no Wine crash. Failed is a
+# crash within the first minute. Anything else says nothing about the build.
+session_health() {
+  crashed=0
+  grep -q -E 'Unhandled (page fault|exception)|err:module:import_dll' "$1" 2>/dev/null && crashed=1
+  if [ "$crashed" = 1 ] && [ "$2" -lt 60 ] && [ "$3" != 1 ]; then
+    echo failed
+  elif [ "$crashed" = 0 ] && { [ "$3" != 1 ] || [ "$2" -ge 60 ]; }; then
+    echo healthy
+  else
+    echo unknown
+  fi
+}
+
+set_switch_state() {
+  if ! { sed -n 1,2p "$switch" && printf '%s\n' "$1"; } > "$switch.$$" \
+    || ! mv -f "$switch.$$" "$switch"; then
+    rm -f "$switch.$$"
+  fi
+}
+
+# The switch record is old build, its name, then the healthy sessions since or "failed".
+# Two healthy sessions clear it.
+record_session() {
+  switch="$STEAM_COMPAT_DATA_PATH/hadron-switch"
+  health=$(session_health "$1" "$2" "$3")
+  echo "=== session health: $health after $2s ===" >> "$log" 2>&1 || true
+  case "$health" in
+    healthy)
+      printf '%s\n' "$np_build" > "$STEAM_COMPAT_DATA_PATH/hadron-healthy" 2>/dev/null || true
+      [ -f "$switch" ] || return 0
+      count=$(sed -n 3p "$switch")
+      case "$count" in
+        0) set_switch_state 1 ;;
+        *) rm -f "$switch" ;;
+      esac
+      ;;
+    failed)
+      [ -f "$switch" ] || return 0
+      set_switch_state failed
+      ;;
+  esac
+}
+
+# Asked once per switch, at the next launch after the crash.
+offer_switch_rebuild() {
+  switch="$STEAM_COMPAT_DATA_PATH/hadron-switch"
+  [ "$(sed -n 3p "$switch" 2>/dev/null)" = failed ] || return 0
+  [ "$verb" != run ] || return 0
+  old_display=$(sed -n 2p "$switch")
+  rm -f "$switch"
+  echo "=== last session crashed after switching from $old_display, offering a rebuild ===" >> "$log" 2>&1 || true
+  rebuild_prefix "This game may need its prefix rebuilt" \
+    "Something appears to have gone wrong the last time you ran this game! Rebuilding the prefix may fix it.
+
+Rebuild your prefix for $np_display? Your save games will be preserved and not lost." \
+    "Launch Without Rebuilding"
 }
 
 claim_prefix() {
@@ -619,8 +842,14 @@ plan_hidden_controllers() {
   owned=""
   [ ! -f "$controllers_file" ] || owned=$(sed -n '/^[0-9a-f]\{4\}\/[0-9a-f]\{4\}$/p' "$controllers_file")
   in_registry=""
-  [ ! -f "$WINEPREFIX/system.reg" ] || in_registry=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
-    | sed -n 's/^\[system\\\\controlset001\\\\services\\\\winebus\\\\devices\\\\\([0-9a-f]\{4\}\/[0-9a-f]\{4\}\)\].*/\1/p' \
+  [ ! -f "$WINEPREFIX/system.reg" ] || in_registry=$(LC_ALL=C awk '
+    /^\[/ {
+      line = tolower($0)
+      prefix = "[system\\\\controlset001\\\\services\\\\winebus\\\\devices\\\\"
+      if (index(line, prefix) != 1) next
+      id = substr(line, length(prefix) + 1, 9)
+      if (id ~ /^[0-9a-f]{4}\/[0-9a-f]{4}$/ && substr(line, length(prefix) + 10, 1) == "]") print id
+    }' "$WINEPREFIX/system.reg" \
     | sort -u)
   if [ "$HADRON_RAW_CONTROLLERS" != "1" ]; then
     controllers_wanted=$(ids_without "$(controller_ids "$SDL_GAMECONTROLLER_IGNORE_DEVICES")" \
@@ -645,9 +874,9 @@ plan_disable_hidraw() {
   hidraw_value=""
   [ -n "$STEAM_COMPAT_DATA_PATH" ] && [ ! -L "$hidraw_file" ] || return 1
   hidraw_set=""
-  [ ! -f "$WINEPREFIX/system.reg" ] || hidraw_set=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
-    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\services\\\\winebus]") == 1; next }
-      s && $0 == "\"disablehidraw\"=dword:00000001" { print 1; exit }')
+  [ ! -f "$WINEPREFIX/system.reg" ] || hidraw_set=$(LC_ALL=C awk '
+      /^\[/ { s = index(tolower($0), "[system\\\\controlset001\\\\services\\\\winebus]") == 1; next }
+      s && tolower($0) == "\"disablehidraw\"=dword:00000001" { print 1; exit }' "$WINEPREFIX/system.reg")
   if [ "$HADRON_DISABLE_HIDRAW" = "1" ]; then
     [ -n "$hidraw_set" ] || hidraw_value='"DisableHidraw"=dword:00000001'
   elif [ -f "$hidraw_file" ] && [ -n "$hidraw_set" ]; then
@@ -664,19 +893,24 @@ winebus_lines() {
 plan_logpixels() {
   dpi_value=""
   new_dpi=""
+  dpi_registry=/dev/null
+  [ ! -f "$WINEPREFIX/user.reg" ] || dpi_registry="$WINEPREFIX/user.reg"
   read -r retina_was dpi <<EOF
-$({ [ ! -f "$WINEPREFIX/user.reg" ] || tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/user.reg"; } | awk '
+$(LC_ALL=C awk '
   /^\[/ { s = 0
-    if (index($0, "[software\\\\wine\\\\mac driver]") == 1) s = 1
-    else if (index($0, "[control panel\\\\desktop]") == 1) s = 2
+    line = tolower($0)
+    if (index(line, "[software\\\\wine\\\\mac driver]") == 1) s = 1
+    else if (index(line, "[control panel\\\\desktop]") == 1) s = 2
     next }
+  s { $0 = tolower($0) }
   s == 1 && $0 ~ /^"retinamode"="[yt1]/ { r = 1 }
   s == 2 && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { d = substr($0, 19) }
-  END { print r + 0, d }')
+  END { print r + 0, d }' "$dpi_registry")
 EOF
-  [ -n "$dpi" ] || [ ! -f "$WINEPREFIX/system.reg" ] || dpi=$(tr '[:upper:]' '[:lower:]' < "$WINEPREFIX/system.reg" \
-    | awk '/^\[/ { s = index($0, "[system\\\\controlset001\\\\hardware profiles\\\\current\\\\software\\\\fonts]") == 1; next }
-      s && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { print substr($0, 19); exit }')
+  [ -n "$dpi" ] || [ ! -f "$WINEPREFIX/system.reg" ] || dpi=$(LC_ALL=C awk '
+      /^\[/ { s = index(tolower($0), "[system\\\\controlset001\\\\hardware profiles\\\\current\\\\software\\\\fonts]") == 1; next }
+      s { $0 = tolower($0) }
+      s && $0 ~ /^"logpixels"=dword:[0-9a-f]+$/ && length($0) <= 26 { print substr($0, 19); exit }' "$WINEPREFIX/system.reg")
   dpi=$((0x${dpi:-0}))
   [ "$dpi" -gt 0 ] || dpi=96
   if [ "$HADRON_RETINA" = "1" ]; then
@@ -693,6 +927,69 @@ video_lines() {
   printf '%s\r\n' '[HKEY_CURRENT_USER\Software\Wine\Mac Driver]' "$retina_line" ''
   [ -n "$dpi_value" ] || return 0
   printf '%s\r\n' '[HKEY_CURRENT_USER\Control Panel\Desktop]' "$dpi_value" ''
+}
+
+prefix_up_to_date() {
+  [ -r "$WINEPREFIX/.update-timestamp" ] || return 1
+  read -r stamp _ < "$WINEPREFIX/.update-timestamp" || return 1
+  stamp=${stamp%"$(printf '\r')"}
+  case "$stamp" in '' | *[!0-9]*) return 1 ;; esac
+  [ "$stamp" = "$(stat -f %m "$np_root/share/wine/wine.inf" 2>/dev/null)" ]
+}
+
+# Proton only writes the registry when its prefix version changes.
+settings_already_applied() {
+  prefix_up_to_date || return 1
+  [ -f "$WINEPREFIX/system.reg" ] && [ -f "$WINEPREFIX/user.reg" ] || return 1
+  LC_ALL=C awk '
+    function double(s,   out, i) {
+      out = ""
+      while ((i = index(s, "\\")) > 0) { out = out substr(s, 1, i) "\\"; s = substr(s, i + 1) }
+      return out s
+    }
+    FNR == 1 {
+      file++
+      root = file == 2 ? "hkey_local_machine\\" : "hkey_current_user\\"
+      key = ""
+    }
+    { sub(/\r$/, "") }
+    /^\[/ {
+      key = ""
+      end = index($0, "]")
+      if (!end) { if (file == 1) bad = 1; next }
+      name = tolower(substr($0, 2, end - 2))
+      if (file == 1) {
+        deleted = sub(/^-/, "", name)
+        ccs = "hkey_local_machine\\system\\currentcontrolset\\"
+        if (index(name, ccs) == 1)
+          name = "hkey_local_machine\\system\\controlset001\\" substr(name, length(ccs) + 1)
+        split(name, part, "\\")
+        name = substr(name, 1, length(part[1]) + 1) double(substr(name, length(part[1]) + 2))
+        if (deleted) gone[name] = 1
+        else { key = name; wanted[name] = 1 }
+        next
+      }
+      name = root name
+      for (g in gone) if (name == g || index(name, g "\\\\") == 1) bad = 1
+      if (name in wanted) key = name
+      next
+    }
+    key == "" || !match($0, /^("([^"\\]|\\.)*"|@)=/) { next }
+    {
+      name = tolower(substr($0, 1, RLENGTH - 1))
+      value = substr($0, RLENGTH + 1)
+      if (file == 1) want[key, name] = value
+      else have[key, name] = value
+    }
+    END {
+      if (file != 3) exit 1
+      for (kv in want) {
+        if (want[kv] == "-") { if (kv in have) bad = 1 }
+        else if (!(kv in have) || have[kv] != want[kv]) bad = 1
+      }
+      exit bad
+    }
+  ' "$settings_file" "$WINEPREFIX/system.reg" "$WINEPREFIX/user.reg"
 }
 
 import_prefix_settings() {
@@ -751,8 +1048,13 @@ import_prefix_settings() {
     without_lock_fds "$WINELOADER" wineboot --init >> "$log" 2>&1 || true
     return 0
   fi
-  without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
-    && import_status=0 || import_status=$?
+  if settings_already_applied; then
+    import_status=0
+    echo "=== prefix settings already applied, skipped the import ===" >> "$log" 2>&1 || true
+  else
+    without_lock_fds "$WINELOADER" reg import "C:\\${settings_file##*/}" >> "$log" 2>&1 \
+      && import_status=0 || import_status=$?
+  fi
   rm -f "$settings_file"
   if [ "$import_status" -eq 0 ] && [ "$hidraw_planned" -eq 1 ] && [ "$HADRON_DISABLE_HIDRAW" != "1" ]; then
     rm -f "$hidraw_file"
@@ -1237,12 +1539,14 @@ link_fonts() {
   for dir in "$np_support/fonts" "$np_root/share/wine/fonts"; do
     for src in "$dir"/*.ttf "$dir"/*.ttc; do
       [ -f "$src" ] || continue
-      name=$(basename "$src")
+      name=${src##*/}
       case "$app_id:$name" in
         1313860:arial.ttf|1506830:arial.ttf) src="$dir/alt/$name" ;;
       esac
       dst="$fonts_dir/$name"
-      if [ -L "$dst" ]; then
+      if [ -L "$dst" ] && [ "$dst" -ef "$src" ]; then
+        :
+      elif [ -L "$dst" ]; then
         rm -f "$dst" && ln -s "$src" "$dst" 2>> "$log" || true
       elif [ ! -e "$dst" ]; then
         ln -s "$src" "$dst" 2>> "$log" || true
@@ -1272,7 +1576,15 @@ if [ -n "$STEAM_COMPAT_DATA_PATH" ]; then
   set_stage "prefix arch check"
   convert_foreign_prefix
   claim_prefix
+  set_stage "prefix switch check"
+  offer_switch_rebuild
+  if [ "${wine_unix##*/}" = aarch64-unix ]; then
+    echo "fex: FEX_X87REDUCEDPRECISION=$FEX_X87REDUCEDPRECISION from $fex_from" >> "$log" 2>&1 || true
+  else
+    echo "avx: ROSETTA_ADVERTISE_AVX=$ROSETTA_ADVERTISE_AVX from $avx_from" >> "$log" 2>&1 || true
+  fi
   without_lock_fds "$WINESERVER" -k >> "$log" 2>&1 || true
+  without_lock_fds "$WINESERVER" -w >> "$log" 2>&1 || true
   set_stage "prefix seed"
   seed_prefix_from_template
   set_stage "profile layout"
@@ -1340,7 +1652,7 @@ install_legacycompat() {
   mkdir -p "$dst" || return 0
   for f in "$src"/*; do
     [ -f "$f" ] || continue
-    b=$(basename "$f")
+    b=${f##*/}
     cmp -s "$f" "$dst/$b" && continue
     if cp -c -f "$f" "$dst/$b" 2>> "$log"; then
       echo "=== installed legacycompat/$b ===" >> "$log" 2>&1 || true
@@ -1438,11 +1750,14 @@ if [ -d "$bridge_src" ] && [ -n "$WINEPREFIX" ]; then
   fi
   for f in "$prefix_steam"/*.dll "$prefix_steam"/*.so "$prefix_steam"/*.exe; do
     [ -f "$f" ] || continue
+    base=${f##*/}
     case " $bridge_files " in
-      *" $(basename "$f") "*) ;;
-      *) rm -f "$f" && echo "=== pruned stale $(basename "$f") ===" >> "$log" 2>&1 ;;
+      *" $base "*) ;;
+      *) rm -f "$f" && echo "=== pruned stale $base ===" >> "$log" 2>&1 ;;
     esac
   done
+  # Needed for CEG 'platform survey'.
+  mkdir -p "$WINEPREFIX/drive_c/windows/system32/config" 2>/dev/null || true
   verify_runner
   if ! install_lsteamclient_trigger; then
     show_alert "Steam files could not be copied" "Hadron could not copy a file into this game's prefix. Open this prefix's hadron-run.log for details."
@@ -1563,14 +1878,18 @@ $icon_arg
 PLIST
 
 # Invokes macOS Game Mode
-for f in "$wine_unix"/*; do
-  [ -e "$f" ] || continue
-  base=${f##*/}
-  case "$base" in
-    wine) continue ;;
-  esac
-  ln -sfn "$f" "$loader_macos/$base"
-done
+(
+  set --
+  for f in "$wine_unix"/*; do
+    [ -e "$f" ] || continue
+    base=${f##*/}
+    case "$base" in
+      wine|wine.app) continue ;;
+    esac
+    set -- "$@" "$f"
+  done
+  [ "$#" -eq 0 ] || ln -sfn "$@" "$loader_macos/"
+)
 ln "$WINELOADER" "$loader_macos/wine" 2>/dev/null || cp "$WINELOADER" "$loader_macos/wine"
 if [ -x "$loader_macos/wine" ]; then
   WINELOADER="$loader_app/Contents/MacOS/wine"
@@ -1593,9 +1912,11 @@ if [ -n "\$STEAM_DYLD_INSERT_LIBRARIES" ]; then
     export DYLD_INSERT_LIBRARIES="\$STEAM_DYLD_INSERT_LIBRARIES"
   fi
 fi
+if [ -n "\$HADRON_FEATURE_DYLIBS" ]; then
+  export DYLD_INSERT_LIBRARIES="\${DYLD_INSERT_LIBRARIES:+\$DYLD_INSERT_LIBRARIES:}\$HADRON_FEATURE_DYLIBS"
+fi
 [ -n "\$HADRON_GAME_CWD" ] && cd "\$HADRON_GAME_CWD"
-"$WINELOADER" "\$@"
-exit \$?
+exec "$WINELOADER" "\$@"
 LAUNCHER
 chmod +x "$loader_macos/launcher"
 
@@ -1610,13 +1931,23 @@ bundle_listing() {
     fi
   done)
 }
+bundle_matches() {
+  if [ -x "$np_support/appinfo" ]; then
+    if "$np_support/appinfo" --same-bundle "$1" "$2" 2>/dev/null; then
+      return 0
+    else
+      case "$?" in 1) return 1 ;; esac
+    fi
+  fi
+  [ "$(bundle_listing "$1")" = "$(bundle_listing "$2")" ]
+}
 install_bundle() (
   exec 7>> "$loader_root/.lock"
   /usr/bin/lockf -s -t 30 7 || exit 1
   same=""
   for b in "$loader_root"/*.app; do
     if [ "$b" = "$loader_app" ] && [ -d "$b" ] && [ ! -L "$b" ] &&
-       [ "$(bundle_listing "$b")" = "$(bundle_listing "$loader_stage")" ]; then
+       bundle_matches "$b" "$loader_stage"; then
       same=1
     fi
   done
@@ -1681,11 +2012,227 @@ kill_wine_prefix() {
 # termination signal to this run script, this handles it
 # shellcheck disable=SC2329 # the trap below invokes this
 terminate() {
+  np_terminated=1
   echo "=== termination signal received, killing wine prefix ===" >> "$log" 2>&1 || true
   kill_wine_prefix
   [ -n "$open_pid" ] && kill "$open_pid" 2>/dev/null || true
+  [ -n "$open_pid" ] || exit 143
 }
+open_pid=""
 trap terminate TERM INT HUP
+
+np_feat_dir="$np_support/plugins"
+np_feat_log() {
+  echo "=== $* ===" >> "$log" 2>&1 || true
+}
+np_feat_field() {
+  LC_ALL=C sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p" "$1"
+}
+np_feat_first() {
+  np_feat_field "$1" "$2" | head -1
+}
+np_feat_requires() {
+  np_feat_field "$1" requires | head -n 4 | while IFS= read -r np_feat_req; do
+    case "$np_feat_req" in
+      (/*) ;;
+      (*) np_feat_req="$HOME/$np_feat_req" ;;
+    esac
+    [ -f "$np_feat_req" ] && { printf '%s' "$np_feat_req"; break; }
+  done
+  return 0
+}
+np_feat_installed() {
+  [ -z "$(np_feat_first "$1" requires)" ] || [ -n "$(np_feat_requires "$1")" ]
+}
+np_feat_file_of() {
+  printf '%s\n' "$np_feat_list" | while IFS= read -r np_feat_entry; do
+    [ "${np_feat_entry%% *}" = "$1" ] && { printf '%s' "${np_feat_entry#* }"; break; }
+  done
+  return 0
+}
+# webpatch.c skips files with overlong lines or values, so they're skipped here too.
+np_feat_too_long() {
+  LC_ALL=C awk 'length($0) >= 2047 { f = 1 } END { exit !f }' "$1" && return 0
+  for np_feat_spec in key:192:1 label:192:1 description:512:1 section:32:1 on:32:1 \
+                      off:32:1 depends:192:1 requires:192:4; do
+    np_feat_max=${np_feat_spec#*:}
+    np_feat_field "$1" "${np_feat_spec%%:*}" | head -n "${np_feat_spec##*:}" |
+      LC_ALL=C awk -v m="${np_feat_max%:*}" 'length($0) >= m { f = 1 } END { exit !f }' &&
+      return 0
+  done
+  return 1
+}
+np_feat_switched() {
+  eval "np_feat_sv=\${$1-}"
+  np_feat_son=$(np_feat_first "$2" on)
+  # shellcheck disable=SC2154 # eval assigns np_feat_sv above
+  [ "$np_feat_sv" = "${np_feat_son:-1}" ]
+}
+# Same rules as the panel.
+np_feat_active() {
+  [ "$2" -le 32 ] || return 1
+  np_feat_af=$(np_feat_file_of "$1")
+  [ -n "$np_feat_af" ] || return 1
+  np_feat_switched "$1" "$np_feat_af" || return 1
+  np_feat_installed "$np_feat_af" || return 1
+  np_feat_adep=$(np_feat_first "$np_feat_af" depends)
+  [ -z "$np_feat_adep" ] || np_feat_active "$np_feat_adep" $(($2 + 1))
+}
+
+np_feat_list=""
+np_feat_count=0
+# Same order as webpatch.c.
+np_feat_files=$(printf '%s\n' "$np_feat_dir"/*.conf | LC_ALL=C sort)
+while IFS= read -r np_feat_file; do
+  case "$np_feat_file" in
+    ("$np_feat_dir"/*.conf) ;;
+    (*) continue ;;
+  esac
+  [ -f "$np_feat_file" ] && [ -r "$np_feat_file" ] || continue
+  if np_feat_too_long "$np_feat_file"; then
+    np_feat_log "plugins: $np_feat_file has a line or value that's too long, ignored"
+    continue
+  fi
+  np_feat_key=$(np_feat_first "$np_feat_file" key)
+  if [ -z "$np_feat_key" ]; then
+    np_feat_log "plugins: $np_feat_file has no key, ignored"
+    continue
+  fi
+  if ! printf '%s\n' "$np_feat_key" | LC_ALL=C grep -qx 'HADRON_[A-Z0-9_]\{1,\}'; then
+    np_feat_log "plugins: $np_feat_file has an invalid key $np_feat_key, ignored"
+    continue
+  fi
+  if [ -z "$(np_feat_first "$np_feat_file" label)" ]; then
+    np_feat_log "plugins: $np_feat_file has no label, ignored"
+    continue
+  fi
+  case "$(np_feat_first "$np_feat_file" section)" in
+    ("" | dev) ;;
+    (*) np_feat_log "plugins: $np_feat_file is not in the dev section, ignored"; continue ;;
+  esac
+  if [ -n "$(np_feat_file_of "$np_feat_key")" ]; then
+    np_feat_log "plugins: $np_feat_file repeats key $np_feat_key, ignored"
+    continue
+  fi
+  if [ "$np_feat_count" -ge 32 ]; then
+    np_feat_log "plugins: $np_feat_file is over the 32 plugin limit, ignored"
+    continue
+  fi
+  np_feat_count=$((np_feat_count + 1))
+  np_feat_list="$np_feat_list
+$np_feat_key $np_feat_file"
+done <<NP_FEAT_FILES
+$np_feat_files
+NP_FEAT_FILES
+
+np_feat_dylibs=""
+np_feat_envs=""
+while IFS= read -r np_feat_entry; do
+  [ -n "$np_feat_entry" ] || continue
+  np_feat_key=${np_feat_entry%% *}
+  np_feat_file=${np_feat_entry#* }
+  if ! np_feat_installed "$np_feat_file"; then
+    np_feat_switched "$np_feat_key" "$np_feat_file" &&
+      np_feat_log "$np_feat_key is on but is skipped as $np_feat_key's required files are missing"
+    continue
+  fi
+  np_feat_active "$np_feat_key" 0 || continue
+
+  if [ "$(np_feat_first "$np_feat_file" inject)" = 1 ]; then
+    np_feat_lib=$(np_feat_requires "$np_feat_file")
+    if [ ! -f "$np_feat_lib" ]; then
+      np_feat_log "$np_feat_key is skipped as it asks to load a dylib but doesn't name one"
+    elif [ "${np_feat_lib#*:}" != "$np_feat_lib" ]; then
+      np_feat_log "$np_feat_key is skipped as $np_feat_lib has a colon in it"
+    else
+      case ":$np_feat_dylibs:" in
+        (*":$np_feat_lib:"*) ;;
+        (*) np_feat_dylibs="${np_feat_dylibs:+$np_feat_dylibs:}$np_feat_lib"
+            np_feat_log "$np_feat_key will be loaded from $np_feat_lib" ;;
+      esac
+    fi
+  fi
+
+  np_feat_stage=$(np_feat_first "$np_feat_file" stage)
+  if [ -n "$np_feat_stage" ]; then
+    case "$np_feat_stage" in
+      (/*) ;;
+      (*) np_feat_stage="$HOME/$np_feat_stage" ;;
+    esac
+    np_feat_sys32="$WINEPREFIX/drive_c/windows/system32"
+    if [ ! -d "$np_feat_stage" ]; then
+      np_feat_log "$np_feat_key copies no DLLs as $np_feat_stage doesn't exist"
+    elif [ ! -d "$np_feat_sys32" ]; then
+      np_feat_log "$np_feat_key copies no DLLs as the prefix has no system32"
+    else
+      for np_feat_src in "$np_feat_stage"/*; do
+        [ -f "$np_feat_src" ] || continue
+        np_feat_dst="$np_feat_sys32/$(basename "$np_feat_src")"
+        if [ -d "$np_feat_dst" ]; then
+          np_feat_log "$np_feat_key skips $(basename "$np_feat_src") as system32 has a folder by that name"
+          continue
+        fi
+        cmp -s "$np_feat_src" "$np_feat_dst" && continue
+        np_feat_tmp="$np_feat_dst.np-stage.$$"
+        rm -f "$np_feat_tmp"
+        if { cp -c "$np_feat_src" "$np_feat_tmp" 2>/dev/null \
+             || cp "$np_feat_src" "$np_feat_tmp"; } && mv -f "$np_feat_tmp" "$np_feat_dst"; then
+          np_feat_log "$np_feat_key copied $(basename "$np_feat_src") into system32"
+        else
+          rm -f "$np_feat_tmp"
+          np_feat_log "$np_feat_key failed to copy $(basename "$np_feat_src") into system32"
+        fi
+      done
+    fi
+  fi
+
+  np_feat_over=$(np_feat_first "$np_feat_file" overrides)
+  if [ -n "$np_feat_over" ]; then
+    export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$np_feat_over"
+    np_feat_log "$np_feat_key adds overrides $np_feat_over"
+  fi
+
+  while IFS= read -r np_feat_env; do
+    [ -n "$np_feat_env" ] || continue
+    case "$np_feat_env" in
+      (*=*) ;;
+      (*) np_feat_log "$np_feat_key skips env line $np_feat_env as it has no ="; continue ;;
+    esac
+    if ! printf '%s\n' "${np_feat_env%%=*}" | LC_ALL=C grep -qx '[A-Z_][A-Z0-9_]*'; then
+      np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as it isn't a valid variable name"
+      continue
+    fi
+    case "${np_feat_env%%=*}" in
+      (DYLD_* | PATH | WINE* | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+       HADRON_FEATURE_DYLIBS | HADRON_GAME_CWD | HADRON_OVERLAY_SHIM)
+        np_feat_log "$np_feat_key skips env ${np_feat_env%%=*} as the compat_run script sets it"
+        continue ;;
+    esac
+    np_feat_rest=${np_feat_env#*=}
+    # shellcheck disable=SC2088 # a literal tilde is what is being matched
+    case "$np_feat_rest" in
+      ("~/"*) np_feat_rest="\$HOME/${np_feat_rest#"~/"}" ;;
+    esac
+    np_feat_env="${np_feat_env%%=*}="
+    # shellcheck disable=SC2016 # the literal text $HOME is what is being replaced
+    while :; do
+      case "$np_feat_rest" in
+        (*'$HOME'*)
+          np_feat_env="$np_feat_env${np_feat_rest%%'$HOME'*}$HOME"
+          np_feat_rest=${np_feat_rest#*'$HOME'} ;;
+        (*) np_feat_env="$np_feat_env$np_feat_rest"; break ;;
+      esac
+    done
+    # Kept in reverse since they get prepended to open args (which flips the order)
+    np_feat_envs="$np_feat_env
+$np_feat_envs"
+    np_feat_log "$np_feat_key sets $np_feat_env"
+  done <<NP_FEAT_ENV
+$(np_feat_field "$np_feat_file" env)
+NP_FEAT_ENV
+done <<NP_FEAT_LIST
+$np_feat_list
+NP_FEAT_LIST
 
 game_cwd="$(pwd)"
 if [ -n "$STEAM_DYLD_INSERT_LIBRARIES" ]; then
@@ -1694,10 +2241,34 @@ else
   echo "=== client staged no overlay renderer, overlay disabled ===" >> "$log" 2>&1 || true
 fi
 set -- --args "$shim_exe" "$@"
-for name in $(env | LC_ALL=C sed -nE 's/^(Steam[A-Za-z0-9]*|VK_DRIVER_FILES|CX_APPLEGPTK_LIBD3DSHARED_PATH|(DXMT_|DXVK_|D3DM_|MTL_|ROSETTA_|HADRON_FEX_)[A-Z0-9_]*)=.*/\1/p'); do
+# Prepended first so they end up last among the --env args since open keeps the last of a repeated name.
+while IFS= read -r np_feat_env; do
+  [ -n "$np_feat_env" ] && set -- --env "$np_feat_env" "$@"
+done <<NP_FEAT_ENVS
+$np_feat_envs
+NP_FEAT_ENVS
+for name in $(env | LC_ALL=C sed -nE 's/^(CX_APPLEGPTK_LIBD3DSHARED_PATH|VK_DRIVER_FILES|Steam[A-Za-z0-9]*|(D3DM_|DXMT_|DXVK_|FEX_|HADRON_FEX_|MTL_|ROSETTA_)[A-Z0-9_]*)=.*/\1/p'); do
   eval "value=\$$name"
   # shellcheck disable=SC2154 # eval assigns value on the line above
   set -- --env "$name=$value" "$@"
+done
+
+# Anything this script does not know by name. A launch option HADRON_ENV_FOO=bar gives
+# the game FOO=bar, which is the only per-game way to set one, and Wine and the graphics
+# layers take far more than the prefixes above.
+np_env_passed=$(env | LC_ALL=C sed -nE 's/^HADRON_ENV_([A-Za-z_][A-Za-z0-9_]*)=.*/\1/p' \
+  | LC_ALL=C sort)
+for name in $np_env_passed; do
+  case "$name" in
+    (DYLD_* | PATH | HOME | STEAM_COMPAT_* | STEAM_DYLD_INSERT_LIBRARIES | \
+     WINEPREFIX | WINELOADER | WINESERVER | WINEDLLPATH | WINEDLLOVERRIDES | HADRON_*)
+      echo "=== HADRON_ENV_$name would replace a setting this launch sets itself, ignored ===" \
+        >> "$log" 2>&1 || true
+      continue ;;
+  esac
+  eval "value=\$HADRON_ENV_$name"
+  set -- --env "$name=$value" "$@"
+  echo "=== HADRON_ENV_$name sets $name ===" >> "$log" 2>&1 || true
 done
 set -- \
   --env WINESERVER="$WINESERVER" \
@@ -1712,10 +2283,18 @@ set -- \
   --env STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_COMPAT_CLIENT_INSTALL_PATH" \
   --env STEAM_COMPAT_APP_ID="$STEAM_COMPAT_APP_ID" \
   --env STEAM_DYLD_INSERT_LIBRARIES="$STEAM_DYLD_INSERT_LIBRARIES" \
+  --env HADRON_FEATURE_DYLIBS="$np_feat_dylibs" \
   --env HADRON_GAME_CWD="$game_cwd" "$@"
 lsregister="/System/Library/Frameworks/CoreServices.framework/Versions/A"
 lsregister="$lsregister/Frameworks/LaunchServices.framework/Support/lsregister"
-[ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1 || true
+registered="$loader_root/.launchservices-registered"
+if [ ! -f "$registered" ] || [ "$loader_app/Contents/Info.plist" -nt "$registered" ]; then
+  if [ -x "$lsregister" ] && "$lsregister" -f "$loader_app" >> "$log" 2>&1; then
+    touch "$registered" 2>/dev/null || true
+  fi
+fi
+np_started=$(date +%s)
+np_terminated=0
 launch_state=running
 set_stage "game"
 open -n -W -a "$loader_app" "$@" >> "$log" 2>&1 &
@@ -1728,5 +2307,7 @@ launch_status=$status
 note_launch
 echo "=== game exited status=$status, killing wine prefix ===" >> "$log" 2>&1 || true
 kill_wine_prefix
+[ -z "$STEAM_COMPAT_DATA_PATH" ] \
+  || record_session "$loader_root/hadron-wine.log" "$(($(date +%s) - np_started))" "$np_terminated"
 echo "=== wine prefix killed, session ending ===" >> "$log" 2>&1 || true
 exit $status

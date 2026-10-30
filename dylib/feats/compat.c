@@ -338,7 +338,7 @@ void np_compat_export_tools_path(void) {
 
 typedef struct {
     char name[64];
-    char build[64];
+    char build[NP_BUILD_ID_MAX + 1];
     char flavor[16];
     char display[96];
     char dir[640];
@@ -383,7 +383,7 @@ static int parse_tool_line(char *line, tool_entry_t *out) {
         field[n++] = tok;
     if (n != 4) return 0;
 
-    if (!is_tool_name(field[0]) || !is_token(field[1], ".-")
+    if (!is_tool_name(field[0]) || !np_is_build_id(field[1])
         || (strcmp(field[2], "fex") != 0 && strcmp(field[2], "rosetta") != 0)
         || !is_display(field[3]))
         return 0;
@@ -810,10 +810,27 @@ void *np_compat_manager(void) {
     return g_manager;
 }
 
-int np_compat_app_runs_tool(uint32_t appid) {
+static const char *app_tool_name(uint32_t appid) {
     const uint8_t *tool = np_compat_tool_for_app(g_manager, appid);
+    const char *name = tool ? *(const char *const *)(tool + COMPAT_TOOL_NAME_OFF) : NULL;
+    return is_tool_name(name) ? name : NULL;
+}
 
-    return tool && is_tool_name(*(const char *const *)(tool + COMPAT_TOOL_NAME_OFF));
+int np_compat_app_runs_tool(uint32_t appid) {
+    return app_tool_name(appid) != NULL;
+}
+
+const char *np_compat_app_tool_dir(uint32_t appid) {
+    const char *name = app_tool_name(appid);
+    if (!name)
+        return NULL;
+
+    load_tool_list_once();
+    for (int i = 0; i < g_tool_count; i++) {
+        if (strcmp(g_tools[i].name, name) == 0)
+            return g_tools[i].dir;
+    }
+    return NULL;
 }
 
 static void *find_tool(void *compat_mgr, const char *wanted) {
@@ -913,6 +930,32 @@ size_t np_compat_fex_tools(const char **names, size_t max) {
         names[n++] = g_tools[i].name;
     }
     return n;
+}
+
+static np_compat_tool_info_t tool_info(int i) {
+    return (np_compat_tool_info_t){ g_tools[i].name, g_tools[i].build, g_tools[i].display,
+                                    strcmp(g_tools[i].flavor, "fex") == 0 };
+}
+
+size_t np_compat_tools(np_compat_tool_info_t *out, size_t max) {
+    load_tool_list_once();
+    size_t n = 0;
+    for (int i = 0; i < g_tool_count && n < max; i++, n++)
+        out[n] = tool_info(i);
+    if ((size_t)g_tool_count > max)
+        NP_WARN("np_compat_tools: more than %zu tools, %s and later are left out", max,
+                g_tools[max].name);
+    return n;
+}
+
+bool np_compat_tool_by_name(const char *name, size_t n, np_compat_tool_info_t *out) {
+    load_tool_list_once();
+    for (int i = 0; name && i < g_tool_count; i++) {
+        if (strlen(g_tools[i].name) != n || memcmp(g_tools[i].name, name, n) != 0) continue;
+        *out = tool_info(i);
+        return true;
+    }
+    return false;
 }
 
 void *np_compat_registered_tool(void *compat_mgr) {

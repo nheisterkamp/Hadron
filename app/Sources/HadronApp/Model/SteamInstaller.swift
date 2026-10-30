@@ -193,6 +193,13 @@ enum SteamInstaller {
             throw StepFailure(step: step, detail: String(localized: "These files did not update: \(remaining.joined(separator: ", "))."))
         }
 
+        if let executable = Bundle.main.executableURL {
+            do {
+                try RebuildPrefixCommand.recordExecutable(executable, in: support)
+            } catch {
+                AppLog.note("install: could not record the rebuild app: \(error.localizedDescription)")
+            }
+        }
         report(.finished)
         return InstallOutcome(
             stoppedClient: stopped,
@@ -253,7 +260,9 @@ enum SteamInstaller {
         guard let insert = SteamBundle.currentInsert(at: plist), !insert.isEmpty else { return }
 
         let deployed = dylib.path(percentEncoded: false)
-        let foreign = insert.split(separator: ":").map(String.init).filter { $0 != deployed }
+        let foreign = insert.split(separator: ":").map(String.init).filter {
+            $0 != deployed && URL(filePath: $0).lastPathComponent != SupportPaths.dylibName
+        }
         guard foreign.isEmpty else {
             throw StepFailure(
                 step: step,

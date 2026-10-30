@@ -1706,7 +1706,7 @@ static HANDLE find_ack_event(void)
         if (!strncmpW(di->ObjectName.Buffer, steam_ack_event, ARRAY_SIZE(steam_ack_event) - 1))
         {
             WINE_TRACE("Found event %s.\n", wine_dbgstr_w(di->ObjectName.Buffer));
-            ret = OpenEventW(SYNCHRONIZE, FALSE, di->ObjectName.Buffer);
+            ret = OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, di->ObjectName.Buffer);
             if (!ret)
                 WINE_WARN("Failed to create event, err %u.\n", GetLastError());
             break;
@@ -1952,6 +1952,12 @@ int main(int argc, char *argv[])
         steam_client_shutdown();
 
         game_process = TRUE;
+    }
+    else
+    {
+        /* CEG Survey nonsense */
+        set_install_paths();
+        setup_steam_files();
     }
 
     if (argc > 1)

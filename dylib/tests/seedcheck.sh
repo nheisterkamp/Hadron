@@ -22,6 +22,7 @@ export np_build np_root wine_unix np_tool_dir WINELOADER WINESERVER
 export STEAM_COMPAT_DATA_PATH WINEPREFIX template_dir log seed_scratch seed_building
 np_root="$work/runner"
 wine_unix="$np_root/lib/wine/x86_64-unix"
+wine_pe64="$np_root/lib/wine/x86_64-windows"
 np_tool_dir="$work/tool"
 mkdir -p "$np_tool_dir" "$np_root/share/wine"
 cp "$SRC" "$np_tool_dir/run"
