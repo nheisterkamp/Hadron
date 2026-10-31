@@ -5,6 +5,27 @@ the GitHub release and for the update window Sparkle shows.
 
 ## 1.0.3
 
+- Wine 11.21, Wine Staging 11.21 and Wine 11.21 for Apple Silicon can be downloaded.
+  Wine 11.15 stays the default.
+- Steam Settings > Compatibility has Default Compatibility Settings: pick the graphics
+  backend and other options once, for all Rosetta or FEX tools or for one runtime. A
+  game follows them unless it has its own settings.
+- A new Winetricks window in the Prefixes view shows what can be installed into a game's
+  prefix, and installs it.
+- Games protected by Steam CEG now start.
+- Games start faster. Hadron skips the registry import when a prefix already has its
+  settings, and the Prefixes view lists prefixes before it has measured their sizes.
+- If a game crashes right after you move it to another Wine runtime, the next launch
+  offers to rebuild its prefix, with a backup if you want one. Your saves are kept.
+- AVX2 is now advertised to Rosetta by default, and FEX uses reduced x87 precision by
+  default, which makes games faster. Each game's Hadron settings can turn either off.
+- A launch option such as `HADRON_ENV_FOO=bar` gives the game `FOO=bar`, for variables
+  Hadron has no setting for.
+- Plug-ins in `~/Library/Application Support/hadron/plugins` show up as rows in a
+  Developer section of a game's Hadron settings.
+- Hadron is available in German and French.
+- Works with Steam client 1792618285 and beta 1792626604.
+- Tuxera NTFS is not supported, because a bug in its driver can corrupt files.
 - Closing a Ubisoft game such as Trackmania now closes Ubisoft Connect too, about 15
   seconds later, so Steam sees the game has stopped. Before, Ubisoft Connect kept running
   and Steam showed the game as still running.
@@ -19,7 +40,6 @@ the GitHub release and for the update window Sparkle shows.
 - Games that install Microsoft's Visual C++ runtime use it instead of Wine's copy, which
   fixes Unreal games that said the runtime was missing.
 - Hadron and its Steam settings are available in Italian.
-- Works with the Steam beta client of October 2026 (1792192922).
 - Fixes from NotProton for Steam installed on another drive, Valve downloads that
   stalled, and changes to a prefix while a game used it.
 

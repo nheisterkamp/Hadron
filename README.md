@@ -24,17 +24,19 @@ not been tested.
   shows up in Steam as its own compatibility tool:
   - **Wine 11.15**, the default.
   - **Wine Staging 11.15**, with the wine-staging patch set.
-  - **Wine 11.19**, the newest development release.
+  - **Wine 11.19**, a development release.
+  - **Wine 11.21**, the newest development release.
+  - **Wine Staging 11.21**, the same with the wine-staging patch set.
   - **CrossOver Wine 26.3**, built from CodeWeavers' published source, the one runtime
     that runs D3DMetal.
-  - **Wine 11.19 for Apple Silicon**, native arm64 Wine that runs x86 games with
-    [FEX](https://github.com/FEX-Emu/FEX) instead of Rosetta. It needs macOS 26.5.
+  - **Wine 11.19 and 11.21 for Apple Silicon**, native arm64 Wine that runs x86 games
+    with [FEX](https://github.com/FEX-Emu/FEX) instead of Rosetta. They need macOS 26.5.
 
   A game's prefix moves between the Rosetta and Apple Silicon runtimes in place. The
   patches in `runtime/patches` redirect Steam's steamclient to lsteamclient in Wine's
   loader, name the prefix profile `steamuser` like Proton does, let a DLL overlay stand
   in for Wine's own Direct3D, and hand games Steam Input's virtual controller in the
-  layout XInput expects. `runtime/patches/wine-11.19-fex` ports arm64 Wine to macOS, and
+  layout XInput expects. `runtime/patches/wine-11.21-fex` ports arm64 Wine to macOS, and
   `runtime/fex` ports FEX's unix side.
 - **Graphics.** Direct3D 10 and 11 go to Metal through
   [DXMT](https://github.com/3Shain/dxmt) by default. Each game's Properties in Steam has a
